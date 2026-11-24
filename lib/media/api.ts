@@ -1,7 +1,10 @@
 import { parseApiError } from "@/lib/api-error"
 import {
+  Clip,
   CompletedPart,
+  Detection,
   InitiateUploadResult,
+  LLMArtifact,
   Media,
   MediaStepsPayload,
 } from "./types"
@@ -32,6 +35,40 @@ export async function getMediaSteps(id: string): Promise<MediaStepsPayload> {
   const response = await fetch(`/api/media/${id}/steps`, { method: "GET" })
   if (!response.ok) {
     throw await parseApiError(response, "Failed to get media steps")
+  }
+  return response.json()
+}
+
+export async function listMediaLLMArtifacts(
+  mediaId: string
+): Promise<LLMArtifact[]> {
+  const response = await fetch(`/api/media/${mediaId}/llm-artifacts`, {
+    method: "GET",
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to list LLM artifacts")
+  }
+  return response.json()
+}
+
+export async function listMediaDetections(
+  mediaId: string
+): Promise<Detection[]> {
+  const response = await fetch(`/api/media/${mediaId}/detections`, {
+    method: "GET",
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to list detections")
+  }
+  return response.json()
+}
+
+export async function listProjectClips(projectId: string): Promise<Clip[]> {
+  const response = await fetch(`/api/projects/${projectId}/clips`, {
+    method: "GET",
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to list clips")
   }
   return response.json()
 }

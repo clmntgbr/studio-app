@@ -58,3 +58,49 @@ export type CompletedPart = {
   partNumber: number
   etag: string
 }
+
+export type LLMArtifact = {
+  id: string
+  mediaFileId: string
+  kind: string
+  payload: unknown
+  provider?: string | null
+  createdAt: string
+}
+
+export type Detection = {
+  id: string
+  mediaFileId: string
+  kind: string
+  sourceStartMs: number
+  sourceEndMs: number
+  confidence?: number | null
+  detector: string
+  firstWordIndex?: number | null
+  lastWordIndex?: number | null
+  payload: unknown
+  createdAt: string
+}
+
+export type Clip = {
+  id: string
+  projectId: string
+  mediaFileId: string
+  sourceStartMs: number
+  sourceEndMs: number
+  origin: string
+  score?: number | null
+  hook?: string | null
+  reason?: string | null
+  title?: string | null
+  description?: string | null
+  hashtags: string[]
+  selected: boolean
+  createdAt: string
+}
+
+export type ChapterHit = {
+  title: string
+  sourceStartMs: number
+  sourceEndMs: number
+}

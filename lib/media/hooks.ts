@@ -6,6 +6,9 @@ import {
   createMediaFromURL,
   getMedia,
   getMediaSteps,
+  listMediaDetections,
+  listMediaLLMArtifacts,
+  listProjectClips,
   listProjectMedia,
   uploadFileToProject,
 } from "./api"
@@ -57,6 +60,51 @@ export function useMediaSteps(id: string | null) {
       )
       return busy ? 2500 : false
     },
+  })
+}
+
+function resultsEnabled(
+  mediaId: string | null,
+  mediaStatus: string | undefined,
+  steps: { kind: string; status: string }[] | undefined
+) {
+  if (!mediaId) return false
+  if (mediaStatus === "ready") return true
+  if (!steps?.length) return false
+  return steps.some(
+    (s) =>
+      (s.kind === "llm" || s.kind === "transcribe" || s.kind === "text") &&
+      s.status === "completed"
+  )
+}
+
+export function useMediaLLMArtifacts(
+  mediaId: string | null,
+  opts?: { mediaStatus?: string; steps?: { kind: string; status: string }[] }
+) {
+  return useQuery({
+    queryKey: queryKeys.media.llmArtifacts(mediaId ?? ""),
+    queryFn: () => listMediaLLMArtifacts(mediaId as string),
+    enabled: resultsEnabled(mediaId, opts?.mediaStatus, opts?.steps),
+  })
+}
+
+export function useMediaDetections(
+  mediaId: string | null,
+  opts?: { mediaStatus?: string; steps?: { kind: string; status: string }[] }
+) {
+  return useQuery({
+    queryKey: queryKeys.media.detections(mediaId ?? ""),
+    queryFn: () => listMediaDetections(mediaId as string),
+    enabled: resultsEnabled(mediaId, opts?.mediaStatus, opts?.steps),
+  })
+}
+
+export function useProjectClips(projectId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.clips.byProject(projectId ?? ""),
+    queryFn: () => listProjectClips(projectId as string),
+    enabled: !!projectId && enabled,
   })
 }
 

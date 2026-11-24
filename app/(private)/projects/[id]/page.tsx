@@ -4,6 +4,7 @@ import { uploadFileToProject } from "@/lib/media/api"
 import { useCreateMediaFromURL, useProjectMedia } from "@/lib/media/hooks"
 import { queryKeys } from "@/lib/query/keys"
 import { useProject } from "@/lib/projects/hooks"
+import { formatDurationSeconds } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -129,6 +130,9 @@ export default function ProjectPage() {
                 </span>
                 <span className="text-muted-foreground">
                   {m.sourceKind} · {m.status}
+                  {m.durationMs != null
+                    ? ` · ${formatDurationSeconds(m.durationMs)}`
+                    : ""}
                 </span>
               </Link>
             </li>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useMedia, useMediaSteps } from "@/lib/media/hooks"
+import { formatDurationSeconds } from "@/lib/utils"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 
@@ -38,6 +39,9 @@ export default function MediaPage() {
         </h1>
         <p className="text-muted-foreground text-sm">
           {media?.status ?? "…"} · {media?.sourceKind ?? "…"}
+          {media?.durationMs != null
+            ? ` · ${formatDurationSeconds(media.durationMs)}`
+            : ""}
         </p>
         <p className="text-muted-foreground font-mono text-xs">{mediaId}</p>
       </header>
@@ -60,7 +64,9 @@ export default function MediaPage() {
                 {s.progress > 0 && s.status === "running"
                   ? ` · ${Math.round(s.progress)}%`
                   : ""}
-                {s.durationMs != null ? ` · ${s.durationMs}ms` : ""}
+                {s.durationMs != null
+                  ? ` · ${formatDurationSeconds(s.durationMs)}`
+                  : ""}
               </span>
             </li>
           ))}
@@ -86,7 +92,9 @@ export default function MediaPage() {
                 </span>
                 <span className="text-muted-foreground">
                   {r.status}
-                  {r.durationMs != null ? ` · ${r.durationMs}ms` : ""}
+                  {r.durationMs != null
+                    ? ` · ${formatDurationSeconds(r.durationMs)}`
+                    : ""}
                 </span>
               </li>
             ))}

@@ -11,7 +11,12 @@ export async function listOutputPresets(): Promise<OutputPreset[]> {
 
 export async function createProjectRender(
   projectId: string,
-  input: { presetId: string; kind?: string }
+  input: {
+    presetId: string
+    kind?: string
+    burnSubtitles?: boolean
+    subtitleStyleId?: string
+  }
 ): Promise<RenderJob> {
   const response = await fetch(`/api/projects/${projectId}/renders`, {
     method: "POST",
@@ -19,6 +24,10 @@ export async function createProjectRender(
     body: JSON.stringify({
       presetId: input.presetId,
       kind: input.kind ?? "master",
+      burnSubtitles: input.burnSubtitles ?? false,
+      ...(input.subtitleStyleId
+        ? { subtitleStyleId: input.subtitleStyleId }
+        : {}),
     }),
   })
   if (!response.ok) {
@@ -30,7 +39,11 @@ export async function createProjectRender(
 /** Ship one LLM/manual clip as its own vertical (or chosen preset) encode. */
 export async function createClipRender(
   clipId: string,
-  input?: { presetId?: string; subtitleStyleId?: string }
+  input?: {
+    presetId?: string
+    subtitleStyleId?: string
+    burnSubtitles?: boolean
+  }
 ): Promise<RenderJob> {
   const response = await fetch(`/api/clips/${clipId}/render`, {
     method: "POST",
@@ -40,6 +53,7 @@ export async function createClipRender(
       ...(input?.subtitleStyleId
         ? { subtitleStyleId: input.subtitleStyleId }
         : {}),
+      burnSubtitles: input?.burnSubtitles ?? false,
     }),
   })
   if (!response.ok) {

@@ -125,6 +125,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const rendersQuery = useProjectRenders(projectId)
   useRenderEvents(projectId)
   const [shippingClips, setShippingClips] = useState(false)
+  const [burnSubtitles, setBurnSubtitles] = useState(false)
 
   const [preview, setPreview] = useState<Timeline | null>(null)
   const [viewMode, setViewMode] = useState<"saved" | "preview">("saved")
@@ -543,15 +544,16 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       const render = await createRender.mutateAsync({
         presetId: selectedPreset.id,
         kind: renderKindForPreset(selectedPreset),
+        burnSubtitles,
       })
       const toShip = selectedClips
       if (toShip.length > 0) {
         const results = await Promise.allSettled(
           toShip.map((c) =>
-            createClipRender(
-              c.id,
-              verticalPresetId ? { presetId: verticalPresetId } : undefined
-            )
+            createClipRender(c.id, {
+              ...(verticalPresetId ? { presetId: verticalPresetId } : {}),
+              burnSubtitles,
+            })
           )
         )
         const failed = results.filter((r) => r.status === "rejected").length
@@ -1017,13 +1019,28 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       </div>
 
       <div className="cf-scroll shrink-0 space-y-2 overflow-y-auto" style={{ maxHeight: "26vh" }}>
-        <div className="cf-panel px-3 py-3">
+        <div className="cf-panel space-y-3 px-3 py-3">
           <FormatPicker
             presets={presetsQuery.data ?? []}
             selectedId={selectedPreset?.id ?? null}
             onSelect={onSelectPreset}
             disabled={busy}
           />
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[#f2f4f8]">
+            <input
+              type="checkbox"
+              className="accent-[#b8ff3c]"
+              checked={burnSubtitles}
+              disabled={busy}
+              onChange={(e) => setBurnSubtitles(e.target.checked)}
+            />
+            <span>
+              Burn subtitles into video
+              <span className="mt-0.5 block text-[10px] text-[#8b93a7]">
+                Off = no captions burned. Hook text on clips still needs fonts.
+              </span>
+            </span>
+          </label>
         </div>
         <div className="grid gap-2 md:grid-cols-[1.4fr_0.7fr]">
           <div className="cf-panel">

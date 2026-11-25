@@ -29,8 +29,12 @@ export function useProjectRenders(projectId: string | null) {
 export function useCreateProjectRender(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { presetId: string; kind?: string }) =>
-      createProjectRender(projectId, input),
+    mutationFn: (input: {
+      presetId: string
+      kind?: string
+      burnSubtitles?: boolean
+      subtitleStyleId?: string
+    }) => createProjectRender(projectId, input),
     onSuccess: (render) => {
       const key = queryKeys.renders.byProject(projectId)
       queryClient.setQueryData<RenderJob[]>(key, (prev) => {

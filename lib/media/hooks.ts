@@ -14,10 +14,11 @@ import {
   listProjectMedia,
   mediaStreamUrl,
   reanalyzeMedia,
+  updateClip,
   updateMediaConfiguration,
   uploadFileToProject,
 } from "./api"
-import type { MediaConfigurationPatch } from "./types"
+import type { Clip, MediaConfigurationPatch } from "./types"
 
 const PROCESSING = new Set([
   "pending",
@@ -114,20 +115,43 @@ export function useProjectClips(projectId: string | null, enabled = true) {
   })
 }
 
+/** Toggle include-in-Ship for a proposed clip (LLM proposals stay; videos only if selected). */
+export function useUpdateClip(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { clipId: string; selected: boolean }) =>
+      updateClip(input.clipId, { selected: input.selected }),
+    onSuccess: (clip) => {
+      const key = queryKeys.clips.byProject(projectId)
+      queryClient.setQueryData<Clip[]>(key, (prev) => {
+        const list = prev ?? []
+        return list.map((c) => (c.id === clip.id ? clip : c))
+      })
+    },
+  })
+}
+
 export function useMediaPlayback(mediaId: string | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.media.playback(mediaId ?? ""),
     queryFn: async () => {
-      // Probe backend that proxy exists, then play via same-origin stream.
-      await getMediaPlayback(mediaId as string)
+      // Prefer proxy; fall back to original source while proxy encodes.
+      const playback = await getMediaPlayback(mediaId as string, "auto")
+      const kind =
+        playback.kind === "source" || playback.kind === "proxy"
+          ? playback.kind
+          : "auto"
       return {
-        url: mediaStreamUrl(mediaId as string),
-        kind: "proxy",
-        expiresIn: 3600,
+        url: mediaStreamUrl(mediaId as string, kind),
+        kind,
+        expiresIn: playback.expiresIn ?? 3600,
       }
     },
     enabled: !!mediaId && enabled,
     staleTime: 10 * 60 * 1000,
+    // Upgrade to proxy once ready without blocking early edit.
+    refetchInterval: (query) =>
+      query.state.data?.kind === "source" ? 5_000 : false,
   })
 }
 

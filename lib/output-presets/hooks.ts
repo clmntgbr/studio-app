@@ -7,6 +7,7 @@ import {
   listOutputPresets,
   listProjectRenders,
 } from "./api"
+import type { RenderJob } from "./types"
 
 export function useOutputPresets() {
   return useQuery({
@@ -21,17 +22,7 @@ export function useProjectRenders(projectId: string | null) {
     queryKey: queryKeys.renders.byProject(projectId ?? ""),
     queryFn: () => listProjectRenders(projectId as string),
     enabled: !!projectId,
-    refetchInterval: (query) => {
-      const items = query.state.data
-      if (!items?.length) return false
-      const busy = items.some(
-        (r) =>
-          r.status === "queued" ||
-          r.status === "running" ||
-          r.status === "pending"
-      )
-      return busy ? 2500 : false
-    },
+    // Progress / completion via realtime (useRenderEvents) — no polling.
   })
 }
 
@@ -40,9 +31,11 @@ export function useCreateProjectRender(projectId: string) {
   return useMutation({
     mutationFn: (input: { presetId: string; kind?: string }) =>
       createProjectRender(projectId, input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.renders.byProject(projectId),
+    onSuccess: (render) => {
+      const key = queryKeys.renders.byProject(projectId)
+      queryClient.setQueryData<RenderJob[]>(key, (prev) => {
+        const list = prev ?? []
+        return [render, ...list.filter((r) => r.id !== render.id)]
       })
     },
   })

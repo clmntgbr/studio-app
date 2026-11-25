@@ -19,7 +19,12 @@ export type RenderJob = {
   kind: string
   strategy: string
   outputPresetId: string
+  clipId?: string | null
   status: string
   progress: number
+  errorMessage?: string | null
+  durationMs?: number | null
+  sizeBytes?: number | null
   createdAt: string
+  completedAt?: string | null
 }

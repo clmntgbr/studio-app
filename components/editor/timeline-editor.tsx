@@ -58,8 +58,57 @@ function LiveClock({
   return <span className="tabular-nums text-[#b8ff3c]">{label}</span>
 }
 
+function KeptScrubber({
+  subscribe,
+  durationMs,
+  onSeek,
+  disabled = false,
+}: {
+  subscribe: (listener: (time: PlaybackTime) => void) => () => void
+  durationMs: number
+  onSeek: (ms: number) => void
+  disabled?: boolean
+}) {
+  const [value, setValue] = useState(0)
+  const dragging = useRef(false)
+  useEffect(() => {
+    return subscribe(({ outputMs, sourceMs }) => {
+      if (dragging.current) return
+      setValue(Math.round(outputMs > 0 || durationMs > 0 ? outputMs : sourceMs))
+    })
+  }, [durationMs, subscribe])
+  if (durationMs <= 0) return null
+  return (
+    <input
+      type="range"
+      min={0}
+      max={durationMs}
+      step={40}
+      value={Math.min(value, durationMs)}
+      disabled={disabled}
+      className="cf-scrub w-full accent-[#b8ff3c]"
+      aria-label="Seek kept timeline"
+      onPointerDown={() => {
+        if (disabled) return
+        dragging.current = true
+      }}
+      onPointerUp={(event) => {
+        dragging.current = false
+        if (disabled) return
+        onSeek(Number(event.currentTarget.value))
+      }}
+      onChange={(event) => {
+        if (disabled) return
+        const next = Number(event.currentTarget.value)
+        setValue(next)
+        onSeek(next)
+      }}
+    />
+  )
+}
+
 export function TimelineEditor({ projectId }: { projectId: string }) {
-  const { data: saved, isLoading, error, refetch, isFetching } =
+  const { data: saved, isLoading, error, refetch } =
     useProjectTimeline(projectId)
   const previewMut = usePreviewTimeline(projectId)
   const createRender = useCreateProjectRender(projectId)
@@ -81,6 +130,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [silenceOpen, setSilenceOpen] = useState(false)
   const [awaitingRebuild, setAwaitingRebuild] = useState(false)
   const awaitingRebuildRef = useRef(false)
+  const editingLockedRef = useRef(false)
   const seenTimelineUpdateRef = useRef(false)
   const REBUILD_TIMEOUT_MS = 90_000
 
@@ -171,12 +221,15 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     versionKey
   )
 
-  // Clock + lightly throttled short preview sync (avoid Range-request thrash).
+  // Clock in output (kept) time when timeline has cuts; short preview sync.
   useEffect(() => {
     if (!playback.data?.url) return
     let lastShortSync = 0
-    return player.subscribe(({ sourceMs }) => {
-      setSourceClock(formatClock(sourceMs))
+    return player.subscribe(({ sourceMs, outputMs }) => {
+      const total =
+        outputDurationMs > 0 ? outputDurationMs : sourceDurationMs
+      const current = outputDurationMs > 0 ? outputMs : sourceMs
+      setSourceClock(`${formatClock(current)} / ${formatClock(total)}`)
       if (!shortVideo) return
       const now = performance.now()
       if (now - lastShortSync < 250) return
@@ -190,7 +243,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         }
       }
     })
-  }, [playback.data?.url, player.subscribe, shortVideo])
+  }, [
+    playback.data?.url,
+    player.subscribe,
+    shortVideo,
+    outputDurationMs,
+    sourceDurationMs,
+  ])
 
   useEffect(() => {
     if (!shortVideo || !playback.data?.url) return
@@ -209,6 +268,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Space") return
+      if (editingLockedRef.current) return
       const target = event.target as HTMLElement | null
       if (
         target &&
@@ -320,12 +380,29 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const shipping = createRender.isPending || !!renderInFlight
   const shipped = latestRender?.status === "completed"
 
-  const busy =
+  // Lock edits while rebuild / silence regen / ship is in flight (not on mere refetch).
+  const editingLocked =
     previewMut.isPending ||
-    createRender.isPending ||
     updateConfig.isPending ||
     awaitingRebuild ||
-    isFetching
+    createRender.isPending
+  editingLockedRef.current = editingLocked
+  const busy = editingLocked
+  const lockReason = awaitingRebuild
+    ? "Rebuilding timeline — edits locked…"
+    : previewMut.isPending
+      ? "Building preview — edits locked…"
+      : updateConfig.isPending
+        ? "Saving settings — edits locked…"
+        : createRender.isPending
+          ? "Shipping — edits locked…"
+          : null
+
+  useEffect(() => {
+    if (!editingLocked || !playing || !sourceVideo) return
+    sourceVideo.pause()
+  }, [editingLocked, playing, sourceVideo])
+
   const title =
     media.data?.title ||
     media.data?.originalFilename ||
@@ -342,6 +419,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const recentRenders = (rendersQuery.data ?? []).slice(0, 6)
 
   function onSelectPreset(preset: OutputPreset) {
+    if (editingLocked) return
     setSelectedPresetId(preset.id)
     setActionOk(null)
   }
@@ -469,6 +547,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                   type="button"
                   className="cf-btn"
                   data-active={viewMode === "saved"}
+                  disabled={editingLocked}
                   onClick={() => setViewMode("saved")}
                 >
                   Saved
@@ -476,6 +555,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                 <button
                   type="button"
                   className="cf-btn"
+                  disabled={editingLocked}
                   onClick={() => setViewMode("preview")}
                 >
                   Preview
@@ -493,7 +573,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             <button
               type="button"
               className="cf-btn"
-              disabled={busy}
+              disabled={editingLocked}
               onClick={() => void refetch()}
             >
               Refresh
@@ -518,7 +598,12 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         </div>
       </header>
 
-      {actionOk ? (
+      {lockReason ? (
+        <div className="cf-panel shrink-0 border-[#5ce1ff55] px-3 py-2 text-[12px] text-[#5ce1ff]">
+          {lockReason}
+        </div>
+      ) : null}
+      {actionOk && !lockReason ? (
         <div className="cf-panel shrink-0 border-[#b8ff3c55] px-3 py-2 text-[12px] text-[#b8ff3c]">
           {actionOk}
         </div>
@@ -542,7 +627,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               <button
                 type="button"
                 className="cf-btn cf-btn-primary px-3 py-1"
-                disabled={!playback.data?.url}
+                disabled={editingLocked || !playback.data?.url}
                 onClick={player.togglePlayback}
               >
                 {playing ? "Pause" : "Play"}
@@ -550,26 +635,30 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             </div>
           </div>
           <div
-            className="relative flex min-h-[240px] flex-1 cursor-pointer items-center justify-center bg-black"
+            className={`relative flex min-h-[240px] flex-1 items-center justify-center bg-black ${
+              editingLocked ? "cursor-wait" : "cursor-pointer"
+            }`}
             onClick={() => {
-              if (!playback.data?.url) return
+              if (editingLocked || !playback.data?.url) return
               player.togglePlayback()
             }}
             onKeyDown={(event) => {
+              if (editingLocked) return
               if (event.key === " " || event.key === "Enter") {
                 event.preventDefault()
                 if (playback.data?.url) player.togglePlayback()
               }
             }}
             role="button"
-            tabIndex={0}
+            tabIndex={editingLocked ? -1 : 0}
             aria-label={playing ? "Pause video" : "Play video"}
+            aria-disabled={editingLocked}
           >
             {isLoading ? (
               <p className="text-[12px] text-[#8b93a7]">Loading timeline…</p>
             ) : playback.isError ? (
               <p className="text-[12px] text-[#ff4d9a]">
-                Proxy unavailable — check media / proxy step.
+                Playback unavailable — wait for fetch/source, or check MinIO.
               </p>
             ) : playback.data?.url ? (
               <video
@@ -578,7 +667,6 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                 className="h-full max-h-full w-full object-contain"
                 playsInline
                 preload="auto"
-                controls
                 onPlay={() => {
                   setPlaying(true)
                   setVideoError(null)
@@ -598,13 +686,40 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               </p>
             )}
             <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-between p-3 text-[10px] text-[#b8ff3c]">
-              <span>RECUT PREVIEW</span>
+              <span>
+                RECUT PREVIEW
+                {playback.data?.kind === "source" ? " · SOURCE" : ""}
+              </span>
               <span>
                 KEEP {segments.length} · −{removedPct}%
+                {outputDurationMs > 0
+                  ? ` · ${formatClock(outputDurationMs)}`
+                  : ""}
               </span>
             </div>
+            {playback.data?.url ? (
+              <div
+                className={`absolute inset-x-3 bottom-3 z-[2] ${
+                  editingLocked ? "pointer-events-none opacity-50" : ""
+                }`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <KeptScrubber
+                  subscribe={player.subscribe}
+                  durationMs={
+                    outputDurationMs > 0 ? outputDurationMs : sourceDurationMs
+                  }
+                  disabled={editingLocked}
+                  onSeek={(ms) => {
+                    if (editingLocked) return
+                    if (outputDurationMs > 0) player.seekOutput(ms)
+                    else player.seekAndPlay(ms)
+                  }}
+                />
+              </div>
+            ) : null}
             {videoError ? (
-              <div className="absolute inset-x-3 bottom-3 rounded border border-[#ff4d9a55] bg-[#0a0b0ecc] px-3 py-2 text-[11px] text-[#ff4d9a]">
+              <div className="absolute inset-x-3 bottom-10 rounded border border-[#ff4d9a55] bg-[#0a0b0ecc] px-3 py-2 text-[11px] text-[#ff4d9a]">
                 {videoError}
               </div>
             ) : null}
@@ -727,7 +842,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               <button
                 type="button"
                 className="cf-btn cf-btn-primary px-3 py-1"
-                disabled={!playback.data?.url}
+                disabled={editingLocked || !playback.data?.url}
                 onClick={player.togglePlayback}
               >
                 {playing
@@ -771,7 +886,11 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       </div>
 
       {/* Sequence */}
-      <div className="h-[180px] shrink-0">
+      <div
+        className={`h-[180px] shrink-0 ${
+          editingLocked ? "pointer-events-none opacity-60" : ""
+        }`}
+      >
         {sourceDurationMs > 0 && timeline ? (
           <SequenceRail
             durationMs={sourceDurationMs}
@@ -779,13 +898,17 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             decisions={editorDecisions}
             playing={playing}
             subscribe={player.subscribe}
-            onSeekSource={player.seekAndPlay}
-            onPreviewDecision={(decision) =>
+            onSeekSource={(ms) => {
+              if (editingLocked) return
+              player.seekAndPlay(ms)
+            }}
+            onPreviewDecision={(decision) => {
+              if (editingLocked) return
               player.previewSourceRange(
                 decision.sourceStartMs,
                 decision.sourceEndMs
               )
-            }
+            }}
           />
         ) : (
           <div className="cf-panel flex h-full items-center justify-center text-[12px] text-[#8b93a7]">

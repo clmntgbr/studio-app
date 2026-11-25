@@ -91,13 +91,17 @@ export default function MediaPage() {
             : ""}
         </p>
         <p className="text-muted-foreground font-mono text-xs">{mediaId}</p>
-        {media?.status === "ready" && media.projectId ? (
+        {media?.projectId &&
+        (media.status === "ready" ||
+          media.status === "processing" ||
+          steps.some((s) => s.kind === "probe" && s.status === "completed")) ? (
           <p>
             <Link
               href={`/projects/${media.projectId}/edit`}
               className="text-muted-foreground text-sm underline"
             >
               Open timeline editor
+              {media.status !== "ready" ? " (proxy may still be encoding)" : ""}
             </Link>
           </p>
         ) : null}

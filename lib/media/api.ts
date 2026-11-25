@@ -68,7 +68,7 @@ export async function listMediaDetections(
 
 export async function getMediaPlayback(
   mediaId: string,
-  kind = "proxy"
+  kind: "auto" | "proxy" | "source" = "auto"
 ): Promise<MediaPlayback> {
   const response = await fetch(
     `/api/media/${mediaId}/playback?kind=${encodeURIComponent(kind)}`,
@@ -81,7 +81,10 @@ export async function getMediaPlayback(
 }
 
 /** Same-origin stream URL for <video src>. Avoids browser↔MinIO CORS. */
-export function mediaStreamUrl(mediaId: string, kind = "proxy") {
+export function mediaStreamUrl(
+  mediaId: string,
+  kind: "auto" | "proxy" | "source" = "auto"
+) {
   return `/api/media/${mediaId}/stream?kind=${encodeURIComponent(kind)}`
 }
 

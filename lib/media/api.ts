@@ -136,6 +136,22 @@ export async function listProjectClips(projectId: string): Promise<Clip[]> {
   if (!response.ok) {
     throw await parseApiError(response, "Failed to list clips")
   }
+  const data = await response.json()
+  return Array.isArray(data) ? data : (data.members ?? data.clips ?? [])
+}
+
+export async function updateClip(
+  clipId: string,
+  patch: { selected?: boolean; title?: string }
+): Promise<Clip> {
+  const response = await fetch(`/api/clips/${clipId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to update clip")
+  }
   return response.json()
 }
 

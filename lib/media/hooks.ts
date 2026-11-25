@@ -14,10 +14,11 @@ import {
   listProjectMedia,
   mediaStreamUrl,
   reanalyzeMedia,
+  updateClip,
   updateMediaConfiguration,
   uploadFileToProject,
 } from "./api"
-import type { MediaConfigurationPatch } from "./types"
+import type { Clip, MediaConfigurationPatch } from "./types"
 
 const PROCESSING = new Set([
   "pending",
@@ -111,6 +112,22 @@ export function useProjectClips(projectId: string | null, enabled = true) {
     queryKey: queryKeys.clips.byProject(projectId ?? ""),
     queryFn: () => listProjectClips(projectId as string),
     enabled: !!projectId && enabled,
+  })
+}
+
+/** Toggle include-in-Ship for a proposed clip (LLM proposals stay; videos only if selected). */
+export function useUpdateClip(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { clipId: string; selected: boolean }) =>
+      updateClip(input.clipId, { selected: input.selected }),
+    onSuccess: (clip) => {
+      const key = queryKeys.clips.byProject(projectId)
+      queryClient.setQueryData<Clip[]>(key, (prev) => {
+        const list = prev ?? []
+        return list.map((c) => (c.id === clip.id ? clip : c))
+      })
+    },
   })
 }
 

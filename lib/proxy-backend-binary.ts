@@ -40,6 +40,7 @@ export async function proxyBackendBinary(
       "content-type",
       "content-length",
       "content-range",
+      "content-disposition",
       "accept-ranges",
       "etag",
       "last-modified",

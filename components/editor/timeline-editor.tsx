@@ -8,6 +8,7 @@ import { SilenceDrawer } from "@/components/editor/factory/silence-drawer"
 import { SynthWaveform } from "@/components/editor/factory/synth-waveform"
 import { buildEditorDecisions } from "@/lib/editor/decisions"
 import { formatClock, EMPTY_SEGMENTS } from "@/lib/editor/timeline-mapper"
+import { useRenderEvents } from "@/lib/editor/use-render-events"
 import { useTimelineEvents } from "@/lib/editor/use-timeline-events"
 import { useTimelinePlayer } from "@/lib/editor/use-timeline-player"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
@@ -19,6 +20,7 @@ import {
   useMediaSteps,
   useProjectClips,
   useProjectMedia,
+  useUpdateClip,
   useUpdateMediaConfiguration,
 } from "@/lib/media/hooks"
 import {
@@ -26,11 +28,14 @@ import {
   previewAspectStyle,
   renderKindForPreset,
 } from "@/lib/output-presets/format"
+import { createClipRender, downloadRender } from "@/lib/output-presets/api"
 import {
   useCreateProjectRender,
   useOutputPresets,
   useProjectRenders,
 } from "@/lib/output-presets/hooks"
+import { queryKeys } from "@/lib/query/keys"
+import { useQueryClient } from "@tanstack/react-query"
 import type { OutputPreset } from "@/lib/output-presets/types"
 import { usePreviewTimeline, useProjectTimeline } from "@/lib/timeline/hooks"
 import type { Timeline } from "@/lib/timeline/types"
@@ -111,11 +116,15 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const { data: saved, isLoading, error, refetch } =
     useProjectTimeline(projectId)
   const previewMut = usePreviewTimeline(projectId)
+  const queryClient = useQueryClient()
   const createRender = useCreateProjectRender(projectId)
+  const updateClipMut = useUpdateClip(projectId)
   const mediaList = useProjectMedia(projectId)
   const clips = useProjectClips(projectId)
   const presetsQuery = useOutputPresets()
   const rendersQuery = useProjectRenders(projectId)
+  useRenderEvents(projectId)
+  const [shippingClips, setShippingClips] = useState(false)
 
   const [preview, setPreview] = useState<Timeline | null>(null)
   const [viewMode, setViewMode] = useState<"saved" | "preview">("saved")
@@ -129,9 +138,11 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [videoError, setVideoError] = useState<string | null>(null)
   const [silenceOpen, setSilenceOpen] = useState(false)
   const [awaitingRebuild, setAwaitingRebuild] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const awaitingRebuildRef = useRef(false)
   const editingLockedRef = useRef(false)
   const seenTimelineUpdateRef = useRef(false)
+  const prevRenderStatusRef = useRef<string | null>(null)
   const REBUILD_TIMEOUT_MS = 90_000
 
   function finishRebuildWait(opts?: { error?: string; ok?: string }) {
@@ -372,30 +383,63 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }, [awaitingRebuild, refetch])
 
   const latestRender = (rendersQuery.data ?? [])[0]
-  const renderInFlight =
-    latestRender &&
-    (latestRender.status === "queued" ||
-      latestRender.status === "running" ||
-      latestRender.status === "pending")
-  const shipping = createRender.isPending || !!renderInFlight
-  const shipped = latestRender?.status === "completed"
+  const renderInFlight = (rendersQuery.data ?? []).some(
+    (r) =>
+      r.status === "queued" || r.status === "running" || r.status === "pending"
+  )
+  const shipped = (rendersQuery.data ?? []).some((r) => r.status === "completed")
 
-  // Lock edits while rebuild / silence regen / ship is in flight (not on mere refetch).
+  useEffect(() => {
+    const status = latestRender?.status ?? null
+    const prev = prevRenderStatusRef.current
+    prevRenderStatusRef.current = status
+    if (!latestRender || status !== "completed") return
+    if (
+      prev === "queued" ||
+      prev === "running" ||
+      prev === "pending" ||
+      prev === null
+    ) {
+      // Only toast when we observe a transition into completed (or first load with done).
+      if (prev != null) {
+        setActionOk("Ship done — download your file in Render queue")
+      }
+    }
+  }, [latestRender?.id, latestRender?.status])
+
+  // Lock edits while rebuild / silence regen / ship render is in flight.
+  const shipping = createRender.isPending || shippingClips || !!renderInFlight
   const editingLocked =
     previewMut.isPending ||
     updateConfig.isPending ||
     awaitingRebuild ||
-    createRender.isPending
+    shipping
   editingLockedRef.current = editingLocked
   const busy = editingLocked
+  const shipProgress =
+    latestRender && renderInFlight
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(
+              (latestRender.progress ?? 0) <= 1
+                ? (latestRender.progress ?? 0) * 100
+                : (latestRender.progress ?? 0)
+            )
+          )
+        )
+      : null
   const lockReason = awaitingRebuild
     ? "Rebuilding timeline — edits locked…"
     : previewMut.isPending
       ? "Building preview — edits locked…"
       : updateConfig.isPending
         ? "Saving settings — edits locked…"
-        : createRender.isPending
-          ? "Shipping — edits locked…"
+        : shipping
+          ? shipProgress != null
+            ? `Shipping — ${latestRender?.status ?? "render"} ${shipProgress}%…`
+            : "Shipping — edits locked…"
           : null
 
   useEffect(() => {
@@ -414,9 +458,16 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     .toUpperCase() || "PROJECT"
 
   const removedPct = compressionPct(sourceDurationMs, outputDurationMs)
-  const selectedClips = (clips.data ?? []).filter((c) => c.selected)
-  const queueClips = (clips.data ?? []).slice(0, 8)
+  const allClips = clips.data ?? []
+  const selectedClips = allClips.filter((c) => c.selected)
   const recentRenders = (rendersQuery.data ?? []).slice(0, 6)
+  const verticalPresetId = useMemo(() => {
+    const list = presetsQuery.data ?? []
+    const vertical = list.find(
+      (p) => p.aspectRatio === "9:16" || (p.height > 0 && p.width / p.height < 1)
+    )
+    return vertical?.id ?? null
+  }, [presetsQuery.data])
 
   function onSelectPreset(preset: OutputPreset) {
     if (editingLocked) return
@@ -464,6 +515,18 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     }
   }
 
+  async function onToggleClipSelected(clipId: string, selected: boolean) {
+    if (editingLocked) return
+    setActionError(null)
+    try {
+      await updateClipMut.mutateAsync({ clipId, selected })
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to update clip selection"
+      )
+    }
+  }
+
   async function onShip() {
     if (!selectedPreset) {
       setActionError("Choisis un format de sortie")
@@ -475,16 +538,58 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     }
     setActionError(null)
     setActionOk(null)
+    setShippingClips(true)
     try {
       const render = await createRender.mutateAsync({
         presetId: selectedPreset.id,
         kind: renderKindForPreset(selectedPreset),
       })
+      const toShip = selectedClips
+      if (toShip.length > 0) {
+        const results = await Promise.allSettled(
+          toShip.map((c) =>
+            createClipRender(
+              c.id,
+              verticalPresetId ? { presetId: verticalPresetId } : undefined
+            )
+          )
+        )
+        const failed = results.filter((r) => r.status === "rejected").length
+        if (failed > 0) {
+          setActionError(
+            `Master queued; ${failed}/${toShip.length} clip renders failed`
+          )
+        }
+      }
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.renders.byProject(projectId),
+      })
       setViewMode("saved")
       setPreview(null)
-      setActionOk(`Ship · render ${render.status} (${selectedPreset.name})`)
+      const clipNote =
+        toShip.length > 0
+          ? ` + ${toShip.length} clip${toShip.length > 1 ? "s" : ""}`
+          : ""
+      setActionOk(
+        `Shipping ${selectedPreset.name}${clipNote} — ${render.status}…`
+      )
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Ship failed")
+    } finally {
+      setShippingClips(false)
+    }
+  }
+
+  async function onDownloadRender(renderId: string) {
+    setActionError(null)
+    setDownloadingId(renderId)
+    try {
+      await downloadRender(renderId)
+      setActionOk("Download started")
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Download failed")
+    } finally {
+      setDownloadingId(null)
     }
   }
 
@@ -510,9 +615,17 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             </span>
             <span>
               MEDIA /{" "}
-              <span className="text-[#f2f4f8]">
-                {(mediaId ?? "—").slice(0, 8)}
-              </span>
+              {mediaId ? (
+                <Link
+                  href={`/media/${mediaId}`}
+                  className="text-[#f2f4f8] underline decoration-[#3a4154] underline-offset-2 hover:text-[#b8ff3c] hover:decoration-[#b8ff3c]"
+                  title="Open media steps"
+                >
+                  {mediaId.slice(0, 8)}
+                </Link>
+              ) : (
+                <span className="text-[#f2f4f8]">—</span>
+              )}
             </span>
             <span>
               VIEW /{" "}
@@ -531,13 +644,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           <div className="text-right">
             <div className="cf-label">Live status</div>
             <div className="cf-live text-3xl font-semibold leading-none">
-              {String(selectedClips.length || queueClips.length || 0).padStart(
-                2,
-                "0"
-              )}
+              {String(selectedClips.length).padStart(2, "0")}
+              <span className="text-lg text-[#8b93a7]">
+                /{String(allClips.length).padStart(2, "0")}
+              </span>
             </div>
             <div className="text-[10px] tracking-widest text-[#8b93a7] uppercase">
-              Clips ready
+              Clips selected
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
@@ -586,13 +699,31 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             >
               {previewMut.isPending ? "Building…" : "Rebuild"}
             </button>
+            {shipped && latestRender ? (
+              <button
+                type="button"
+                className="cf-btn cf-btn-primary"
+                disabled={!!downloadingId}
+                onClick={() => void onDownloadRender(latestRender.id)}
+              >
+                {downloadingId === latestRender.id
+                  ? "Opening…"
+                  : "Download"}
+              </button>
+            ) : null}
             <button
               type="button"
               className="cf-btn cf-btn-primary"
               disabled={busy || segments.length === 0 || !selectedPreset}
               onClick={() => void onShip()}
             >
-              {createRender.isPending ? "Shipping…" : "Ship"}
+              {shipping
+                ? "Shipping…"
+                : shipped
+                  ? "Ship again"
+                  : selectedClips.length > 0
+                    ? `Ship · master + ${selectedClips.length}`
+                    : "Ship · master"}
             </button>
           </div>
         </div>
@@ -603,7 +734,20 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           {lockReason}
         </div>
       ) : null}
-      {actionOk && !lockReason ? (
+      {shipped && !lockReason ? (
+        <div className="cf-panel shrink-0 border-[#b8ff3c55] px-3 py-2 text-[12px] text-[#b8ff3c]">
+          Ship complete — downloads in Render queue
+        </div>
+      ) : null}
+      {latestRender?.status === "failed" && !lockReason ? (
+        <div className="cf-panel shrink-0 border-[#ff4d9a55] px-3 py-2 text-[12px] text-[#ff4d9a]">
+          Ship failed
+          {latestRender.errorMessage
+            ? ` — ${latestRender.errorMessage}`
+            : ""}
+        </div>
+      ) : null}
+      {actionOk && !lockReason && !shipped ? (
         <div className="cf-panel shrink-0 border-[#b8ff3c55] px-3 py-2 text-[12px] text-[#b8ff3c]">
           {actionOk}
         </div>
@@ -772,55 +916,101 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             </div>
           </div>
 
-          <div className="cf-panel max-h-44 overflow-hidden">
+          <div className="cf-panel max-h-56 overflow-hidden">
             <div className="border-b border-[#232733] px-3 py-2">
-              <span className="cf-label">Render queue</span>
+              <span className="cf-label">Clips · coche pour Ship</span>
             </div>
-            <ul className="cf-scroll max-h-32 overflow-y-auto px-2 py-1 text-[11px]">
-              {recentRenders.length > 0
-                ? recentRenders.map((job, index) => (
-                    <li
-                      key={job.id}
-                      className="flex items-center justify-between gap-2 border-b border-[#1a1d27] px-1 py-1.5 last:border-0"
+            <ul className="cf-scroll max-h-24 overflow-y-auto px-2 py-1 text-[11px]">
+              {allClips.length === 0 ? (
+                <li className="px-1 py-2 text-[#8b93a7]">
+                  Propositions LLM bientôt / aucune encore.
+                </li>
+              ) : (
+                allClips.map((clip, index) => (
+                  <li key={clip.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 border-b border-[#1a1d27] px-1 py-1.5 text-left last:border-0 disabled:opacity-50"
+                      disabled={editingLocked || updateClipMut.isPending}
+                      onClick={() =>
+                        void onToggleClipSelected(clip.id, !clip.selected)
+                      }
                     >
                       <span className="truncate text-[#f2f4f8]">
-                        MASTER_{String(index + 1).padStart(2, "0")} · {job.kind}
+                        SHORT_{String(index + 1).padStart(2, "0")}
+                        {clip.title || clip.hook
+                          ? ` · ${clip.title || clip.hook}`
+                          : ""}
                       </span>
                       <span
                         className={
-                          job.status === "completed"
-                            ? "shrink-0 text-[#b8ff3c]"
-                            : job.status === "failed"
-                              ? "shrink-0 text-[#ff4d9a]"
-                              : "shrink-0 text-[#5ce1ff]"
+                          clip.selected ? "text-[#b8ff3c]" : "text-[#8b93a7]"
                         }
                       >
-                        {job.status.toUpperCase()}
-                        {job.progress > 0 && job.progress < 1
-                          ? ` ${Math.round(job.progress * 100)}%`
-                          : ""}
+                        {clip.selected ? "✓ SHIP" : "skip"}
                       </span>
-                    </li>
-                  ))
-                : queueClips.length === 0 ? (
-                    <li className="px-1 py-2 text-[#8b93a7]">
-                      Choisis un format puis Ship.
-                    </li>
-                  ) : (
-                    queueClips.map((clip, index) => (
-                      <li
-                        key={clip.id}
-                        className="flex items-center justify-between gap-2 border-b border-[#1a1d27] px-1 py-1.5 last:border-0"
-                      >
-                        <span className="truncate text-[#f2f4f8]">
-                          SHORT_{String(index + 1).padStart(2, "0")}.mp4
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+            <div className="border-t border-[#232733] px-3 py-2">
+              <span className="cf-label">Render queue</span>
+            </div>
+            <ul className="cf-scroll max-h-24 overflow-y-auto px-2 py-1 text-[11px]">
+              {recentRenders.length === 0 ? (
+                <li className="px-1 py-2 text-[#8b93a7]">
+                  Ship = master
+                  {selectedClips.length > 0
+                    ? ` + ${selectedClips.length} clip${selectedClips.length > 1 ? "s" : ""}`
+                    : " (aucun clip coché)"}
+                  .
+                </li>
+              ) : (
+                recentRenders.map((job, index) => (
+                  <li
+                    key={job.id}
+                    className="space-y-1 border-b border-[#1a1d27] px-1 py-1.5 last:border-0"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[#f2f4f8]">
+                        {job.kind === "clip" ? "CLIP" : "MASTER"}_
+                        {String(index + 1).padStart(2, "0")} · {job.kind}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span
+                          className={
+                            job.status === "completed"
+                              ? "text-[#b8ff3c]"
+                              : job.status === "failed"
+                                ? "text-[#ff4d9a]"
+                                : "text-[#5ce1ff]"
+                          }
+                        >
+                          {job.status === "completed"
+                            ? "DONE"
+                            : job.status.toUpperCase()}
                         </span>
-                        <span className="shrink-0 text-[#b8ff3c]">
-                          {clip.selected ? "✓ SEL" : "READY"}
-                        </span>
-                      </li>
-                    ))
-                  )}
+                        {job.status === "completed" ? (
+                          <button
+                            type="button"
+                            className="cf-btn px-2 py-0.5 text-[10px]"
+                            disabled={downloadingId === job.id}
+                            onClick={() => void onDownloadRender(job.id)}
+                          >
+                            {downloadingId === job.id ? "…" : "↓ DL"}
+                          </button>
+                        ) : null}
+                      </span>
+                    </div>
+                    {job.status === "failed" && job.errorMessage ? (
+                      <p className="truncate text-[10px] text-[#ff4d9a]/80">
+                        {job.errorMessage}
+                      </p>
+                    ) : null}
+                  </li>
+                ))
+              )}
             </ul>
           </div>
         </div>

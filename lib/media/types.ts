@@ -127,6 +127,8 @@ export type MediaConfiguration = {
   sponsorsAction: string
   adsAction: string
   language?: string | null
+  /** "" | parts:N | durationMs:N */
+  masterSplit: string
   updatedAt: string
 }
 
@@ -145,4 +147,5 @@ export type MediaConfigurationPatch = {
   sponsorsAction?: string
   adsAction?: string
   language?: string | null
+  masterSplit?: string
 }

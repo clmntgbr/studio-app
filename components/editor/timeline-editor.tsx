@@ -13,6 +13,11 @@ import { useTimelineEvents } from "@/lib/editor/use-timeline-events"
 import { useTimelinePlayer } from "@/lib/editor/use-timeline-player"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
 import {
+  formatMasterSplit,
+  parseMasterSplit,
+  type MasterSplitState,
+} from "@/lib/media/master-split"
+import {
   useMedia,
   useMediaConfiguration,
   useMediaDetections,
@@ -545,6 +550,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         presetId: selectedPreset.id,
         kind: renderKindForPreset(selectedPreset),
         burnSubtitles,
+        force: true,
       })
       const toShip = selectedClips
       if (toShip.length > 0) {
@@ -553,6 +559,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             createClipRender(c.id, {
               ...(verticalPresetId ? { presetId: verticalPresetId } : {}),
               burnSubtitles,
+              force: true,
             })
           )
         )
@@ -582,16 +589,32 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     }
   }
 
-  async function onDownloadRender(renderId: string) {
+  async function onDownloadRender(renderId: string, part?: number) {
     setActionError(null)
-    setDownloadingId(renderId)
+    const dlKey = part ? `${renderId}:${part}` : renderId
+    setDownloadingId(dlKey)
     try {
-      await downloadRender(renderId)
-      setActionOk("Download started")
+      await downloadRender(renderId, part)
+      setActionOk(part ? `Part ${part} download started` : "Download started")
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Download failed")
     } finally {
       setDownloadingId(null)
+    }
+  }
+
+  const masterSplit = parseMasterSplit(configQuery.data?.masterSplit)
+  async function onMasterSplitChange(next: MasterSplitState) {
+    if (!mediaId) return
+    setActionError(null)
+    try {
+      await updateConfig.mutateAsync({
+        masterSplit: formatMasterSplit(next),
+      })
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to save master split"
+      )
     }
   }
 
@@ -994,14 +1017,36 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                             : job.status.toUpperCase()}
                         </span>
                         {job.status === "completed" ? (
-                          <button
-                            type="button"
-                            className="cf-btn px-2 py-0.5 text-[10px]"
-                            disabled={downloadingId === job.id}
-                            onClick={() => void onDownloadRender(job.id)}
-                          >
-                            {downloadingId === job.id ? "…" : "↓ DL"}
-                          </button>
+                          <span className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              className="cf-btn px-2 py-0.5 text-[10px]"
+                              disabled={downloadingId === job.id}
+                              onClick={() => void onDownloadRender(job.id)}
+                            >
+                              {downloadingId === job.id ? "…" : "↓ DL"}
+                            </button>
+                            {(job.outputParts?.length ?? 0) > 0
+                              ? job.outputParts!.map((_, i) => {
+                                  const part = i + 1
+                                  const key = `${job.id}:${part}`
+                                  return (
+                                    <button
+                                      key={key}
+                                      type="button"
+                                      className="cf-btn px-1.5 py-0.5 text-[10px]"
+                                      disabled={downloadingId === key}
+                                      onClick={() =>
+                                        void onDownloadRender(job.id, part)
+                                      }
+                                      title={`Part ${part}`}
+                                    >
+                                      {downloadingId === key ? "…" : `P${part}`}
+                                    </button>
+                                  )
+                                })
+                              : null}
+                          </span>
                         ) : null}
                       </span>
                     </div>
@@ -1035,12 +1080,86 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               onChange={(e) => setBurnSubtitles(e.target.checked)}
             />
             <span>
-              Burn subtitles into video
+              Incruster les SRT
               <span className="mt-0.5 block text-[10px] text-[#8b93a7]">
-                Off = no captions burned. Hook text on clips still needs fonts.
+                Off = pas de sous-titres. On = SRT gravés dans le master et les
+                clips cochés.
               </span>
             </span>
           </label>
+          <div className="space-y-1.5 border-t border-[#232733] pt-2">
+            <span className="cf-label">Split master (TikTok / multi)</span>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              {(
+                [
+                  ["off", "Off"],
+                  ["parts", "N parts"],
+                  ["duration", "Max min"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`cf-btn px-2 py-1 ${
+                    masterSplit.mode === mode ? "cf-btn-primary" : ""
+                  }`}
+                  disabled={busy || !mediaId || updateConfig.isPending}
+                  onClick={() =>
+                    void onMasterSplitChange({ ...masterSplit, mode })
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+              {masterSplit.mode === "parts" ? (
+                <label className="flex items-center gap-1 text-[#8b93a7]">
+                  N
+                  <input
+                    type="number"
+                    min={2}
+                    max={50}
+                    className="w-14 rounded border border-[#232733] bg-[#12141a] px-1 py-0.5 text-[#f2f4f8]"
+                    defaultValue={masterSplit.parts}
+                    key={`parts-${masterSplit.parts}`}
+                    disabled={busy || updateConfig.isPending}
+                    onBlur={(e) =>
+                      void onMasterSplitChange({
+                        ...masterSplit,
+                        parts: Number(e.target.value) || 2,
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+              {masterSplit.mode === "duration" ? (
+                <label className="flex items-center gap-1 text-[#8b93a7]">
+                  min
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    className="w-14 rounded border border-[#232733] bg-[#12141a] px-1 py-0.5 text-[#f2f4f8]"
+                    defaultValue={masterSplit.durationMin}
+                    key={`dur-${masterSplit.durationMin}`}
+                    disabled={busy || updateConfig.isPending}
+                    onBlur={(e) =>
+                      void onMasterSplitChange({
+                        ...masterSplit,
+                        durationMin: Number(e.target.value) || 10,
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+            </div>
+            <p className="text-[10px] text-[#8b93a7]">
+              Une valeur BDD{" "}
+              <code className="text-[#5ce1ff]">
+                {formatMasterSplit(masterSplit) || "off"}
+              </code>
+              . Master entier + parts P1… après Ship.
+            </p>
+          </div>
         </div>
         <div className="grid gap-2 md:grid-cols-[1.4fr_0.7fr]">
           <div className="cf-panel">

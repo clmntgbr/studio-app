@@ -16,6 +16,7 @@ export async function createProjectRender(
     kind?: string
     burnSubtitles?: boolean
     subtitleStyleId?: string
+    force?: boolean
   }
 ): Promise<RenderJob> {
   const response = await fetch(`/api/projects/${projectId}/renders`, {
@@ -25,6 +26,7 @@ export async function createProjectRender(
       presetId: input.presetId,
       kind: input.kind ?? "master",
       burnSubtitles: input.burnSubtitles ?? false,
+      force: input.force ?? true,
       ...(input.subtitleStyleId
         ? { subtitleStyleId: input.subtitleStyleId }
         : {}),
@@ -43,6 +45,7 @@ export async function createClipRender(
     presetId?: string
     subtitleStyleId?: string
     burnSubtitles?: boolean
+    force?: boolean
   }
 ): Promise<RenderJob> {
   const response = await fetch(`/api/clips/${clipId}/render`, {
@@ -54,6 +57,7 @@ export async function createClipRender(
         ? { subtitleStyleId: input.subtitleStyleId }
         : {}),
       burnSubtitles: input?.burnSubtitles ?? false,
+      force: input?.force ?? true,
     }),
   })
   if (!response.ok) {
@@ -76,20 +80,30 @@ export async function listProjectRenders(
 }
 
 /** Same-origin API proxy URL (streams the file; no MinIO presign). */
-export function renderDownloadURL(renderId: string): string {
-  return `/api/renders/${renderId}/download`
+export function renderDownloadURL(renderId: string, part?: number): string {
+  const q = part && part > 0 ? `?part=${part}` : ""
+  return `/api/renders/${renderId}/download${q}`
 }
 
 /** Triggers a browser download through the authenticated API proxy. */
-export async function downloadRender(renderId: string): Promise<void> {
-  const response = await fetch(renderDownloadURL(renderId), { method: "GET" })
+export async function downloadRender(
+  renderId: string,
+  part?: number
+): Promise<void> {
+  const response = await fetch(renderDownloadURL(renderId, part), {
+    method: "GET",
+  })
   if (!response.ok) {
     throw await parseApiError(response, "Failed to download render")
   }
   const blob = await response.blob()
   const cd = response.headers.get("content-disposition") ?? ""
   const match = /filename="?([^";]+)"?/i.exec(cd)
-  const filename = match?.[1] ?? `render-${renderId}.mp4`
+  const filename =
+    match?.[1] ??
+    (part && part > 0
+      ? `render-${renderId}-part-${String(part).padStart(2, "0")}.mp4`
+      : `render-${renderId}.mp4`)
   const objectURL = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = objectURL

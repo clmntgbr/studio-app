@@ -34,6 +34,7 @@ export function useCreateProjectRender(projectId: string) {
       kind?: string
       burnSubtitles?: boolean
       subtitleStyleId?: string
+      force?: boolean
     }) => createProjectRender(projectId, input),
     onSuccess: (render) => {
       const key = queryKeys.renders.byProject(projectId)

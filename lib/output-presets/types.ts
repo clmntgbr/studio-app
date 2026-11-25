@@ -23,6 +23,8 @@ export type RenderJob = {
   status: string
   progress: number
   errorMessage?: string | null
+  storageKey?: string | null
+  outputParts?: string[]
   durationMs?: number | null
   sizeBytes?: number | null
   createdAt: string

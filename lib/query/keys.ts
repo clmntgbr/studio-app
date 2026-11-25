@@ -19,10 +19,28 @@ export const queryKeys = {
       [...queryKeys.media.detail(id), "llm-artifacts"] as const,
     detections: (id: string) =>
       [...queryKeys.media.detail(id), "detections"] as const,
+    playback: (id: string) =>
+      [...queryKeys.media.detail(id), "playback"] as const,
+    configuration: (id: string) =>
+      [...queryKeys.media.detail(id), "configuration"] as const,
   },
   clips: {
     all: ["clips"] as const,
     byProject: (projectId: string) =>
       [...queryKeys.clips.all, "project", projectId] as const,
+  },
+  timeline: {
+    all: ["timeline"] as const,
+    byProject: (projectId: string) =>
+      [...queryKeys.timeline.all, "project", projectId] as const,
+  },
+  outputPresets: {
+    all: ["output-presets"] as const,
+    list: () => [...queryKeys.outputPresets.all, "list"] as const,
+  },
+  renders: {
+    all: ["renders"] as const,
+    byProject: (projectId: string) =>
+      [...queryKeys.renders.all, "project", projectId] as const,
   },
 }

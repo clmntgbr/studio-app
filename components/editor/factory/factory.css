@@ -1,0 +1,123 @@
+.clip-factory {
+  --cf-bg: #0a0b0e;
+  --cf-panel: #12141a;
+  --cf-border: #232733;
+  --cf-pink: #ff4d9a;
+  --cf-pink-dim: #ff4d9a55;
+  --cf-green: #b8ff3c;
+  --cf-cyan: #5ce1ff;
+  --cf-muted: #8b93a7;
+  --cf-text: #f2f4f8;
+  --cf-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #1a1020 0%, transparent 55%),
+    radial-gradient(900px 400px at 90% 0%, #101820 0%, transparent 50%),
+    var(--cf-bg);
+  color: var(--cf-text);
+  font-family: var(--cf-mono);
+}
+
+.clip-factory * {
+  box-sizing: border-box;
+}
+
+.cf-panel {
+  background: linear-gradient(180deg, #161922 0%, var(--cf-panel) 100%);
+  border: 1px solid var(--cf-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cf-label {
+  color: var(--cf-muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cf-step {
+  border: 1px solid var(--cf-border);
+  color: var(--cf-muted);
+  padding: 0.25rem 0.55rem;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+}
+
+.cf-step[data-active="true"] {
+  border-color: var(--cf-green);
+  color: var(--cf-green);
+  box-shadow: 0 0 0 1px #b8ff3c33 inset;
+}
+
+.cf-step[data-done="true"] {
+  border-color: var(--cf-pink-dim);
+  color: var(--cf-pink);
+}
+
+.cf-live {
+  color: var(--cf-green);
+  text-shadow: 0 0 12px #b8ff3c66;
+}
+
+.cf-pink {
+  color: var(--cf-pink);
+}
+
+.cf-btn {
+  border: 1px solid var(--cf-border);
+  background: #1a1d27;
+  color: var(--cf-text);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+}
+
+.cf-btn:hover:not(:disabled) {
+  border-color: var(--cf-pink);
+  color: var(--cf-pink);
+}
+
+.cf-btn:disabled {
+  opacity: 0.4;
+}
+
+.cf-btn-primary {
+  border-color: var(--cf-green);
+  color: var(--cf-green);
+}
+
+.cf-btn-primary:hover:not(:disabled) {
+  background: #b8ff3c18;
+}
+
+.cf-playhead {
+  background: var(--cf-green);
+  box-shadow: 0 0 10px #b8ff3c88;
+}
+
+.cf-keep {
+  background: linear-gradient(180deg, #2dff9a88, #2dff9a44);
+}
+
+.cf-cut {
+  background: linear-gradient(180deg, #ff4d9aaa, #ff4d9a44);
+}
+
+.cf-suggest {
+  background: linear-gradient(180deg, #ff4d9a55, #ff4d9a22);
+}
+
+.cf-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.cf-scroll::-webkit-scrollbar-thumb {
+  background: #2c3140;
+  border-radius: 99px;
+}

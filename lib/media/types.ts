@@ -104,3 +104,45 @@ export type ChapterHit = {
   sourceStartMs: number
   sourceEndMs: number
 }
+
+export type MediaPlayback = {
+  url: string
+  kind: string
+  expiresIn: number
+}
+
+export type MediaConfiguration = {
+  mediaFileId: string
+  silenceEnabled: boolean
+  thresholdMode: string
+  silenceThresholdDb?: number | null
+  detectionLevel: string
+  silenceMinDurationMs: number
+  paddingBeforeMs: number
+  paddingAfterMs: number
+  speechMinDurationMs: number
+  fillersEnabled: boolean
+  repetitionsEnabled: boolean
+  falseStartsEnabled: boolean
+  sponsorsAction: string
+  adsAction: string
+  language?: string | null
+  updatedAt: string
+}
+
+export type MediaConfigurationPatch = {
+  silenceEnabled?: boolean
+  thresholdMode?: string
+  silenceThresholdDb?: number | null
+  detectionLevel?: string
+  silenceMinDurationMs?: number
+  paddingBeforeMs?: number
+  paddingAfterMs?: number
+  speechMinDurationMs?: number
+  fillersEnabled?: boolean
+  repetitionsEnabled?: boolean
+  falseStartsEnabled?: boolean
+  sponsorsAction?: string
+  adsAction?: string
+  language?: string | null
+}

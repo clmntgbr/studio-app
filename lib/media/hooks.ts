@@ -5,13 +5,19 @@ import { queryKeys } from "@/lib/query/keys"
 import {
   createMediaFromURL,
   getMedia,
+  getMediaConfiguration,
+  getMediaPlayback,
   getMediaSteps,
   listMediaDetections,
   listMediaLLMArtifacts,
   listProjectClips,
   listProjectMedia,
+  mediaStreamUrl,
+  reanalyzeMedia,
+  updateMediaConfiguration,
   uploadFileToProject,
 } from "./api"
+import type { MediaConfigurationPatch } from "./types"
 
 const PROCESSING = new Set([
   "pending",
@@ -105,6 +111,54 @@ export function useProjectClips(projectId: string | null, enabled = true) {
     queryKey: queryKeys.clips.byProject(projectId ?? ""),
     queryFn: () => listProjectClips(projectId as string),
     enabled: !!projectId && enabled,
+  })
+}
+
+export function useMediaPlayback(mediaId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.media.playback(mediaId ?? ""),
+    queryFn: async () => {
+      // Probe backend that proxy exists, then play via same-origin stream.
+      await getMediaPlayback(mediaId as string)
+      return {
+        url: mediaStreamUrl(mediaId as string),
+        kind: "proxy",
+        expiresIn: 3600,
+      }
+    },
+    enabled: !!mediaId && enabled,
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+export function useMediaConfiguration(mediaId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.media.configuration(mediaId ?? ""),
+    queryFn: () => getMediaConfiguration(mediaId as string),
+    enabled: !!mediaId,
+  })
+}
+
+export function useUpdateMediaConfiguration(mediaId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { patch: MediaConfigurationPatch }) => {
+      const cfg = await updateMediaConfiguration(mediaId, input.patch)
+      // Quick timeline-build tasks: silence + text detection.
+      await reanalyzeMedia(mediaId, ["silence", "text"])
+      return cfg
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.configuration(mediaId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.steps(mediaId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.detections(mediaId),
+      })
+    },
   })
 }
 

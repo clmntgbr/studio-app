@@ -6,6 +6,9 @@ import {
   InitiateUploadResult,
   LLMArtifact,
   Media,
+  MediaConfiguration,
+  MediaConfigurationPatch,
+  MediaPlayback,
   MediaStepsPayload,
 } from "./types"
 
@@ -61,6 +64,66 @@ export async function listMediaDetections(
     throw await parseApiError(response, "Failed to list detections")
   }
   return response.json()
+}
+
+export async function getMediaPlayback(
+  mediaId: string,
+  kind = "proxy"
+): Promise<MediaPlayback> {
+  const response = await fetch(
+    `/api/media/${mediaId}/playback?kind=${encodeURIComponent(kind)}`,
+    { method: "GET" }
+  )
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to get playback URL")
+  }
+  return response.json()
+}
+
+/** Same-origin stream URL for <video src>. Avoids browser↔MinIO CORS. */
+export function mediaStreamUrl(mediaId: string, kind = "proxy") {
+  return `/api/media/${mediaId}/stream?kind=${encodeURIComponent(kind)}`
+}
+
+export async function getMediaConfiguration(
+  mediaId: string
+): Promise<MediaConfiguration> {
+  const response = await fetch(`/api/media/${mediaId}/configuration`, {
+    method: "GET",
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to get configuration")
+  }
+  return response.json()
+}
+
+export async function updateMediaConfiguration(
+  mediaId: string,
+  patch: MediaConfigurationPatch
+): Promise<MediaConfiguration> {
+  const response = await fetch(`/api/media/${mediaId}/configuration`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to update configuration")
+  }
+  return response.json()
+}
+
+export async function reanalyzeMedia(
+  mediaId: string,
+  steps: string[] = ["silence"]
+): Promise<void> {
+  const response = await fetch(`/api/media/${mediaId}/reanalyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ steps }),
+  })
+  if (!response.ok) {
+    throw await parseApiError(response, "Failed to reanalyze media")
+  }
 }
 
 export async function listProjectClips(projectId: string): Promise<Clip[]> {

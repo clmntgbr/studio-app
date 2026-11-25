@@ -163,25 +163,48 @@ export function useMediaConfiguration(mediaId: string | null) {
   })
 }
 
+type UpdateMediaConfigurationInput =
+  | MediaConfigurationPatch
+  | { patch: MediaConfigurationPatch; reanalyze?: boolean }
+
+function normalizeConfigUpdate(input: UpdateMediaConfigurationInput): {
+  patch: MediaConfigurationPatch
+  reanalyze: boolean
+} {
+  if (input && typeof input === "object" && "patch" in input) {
+    return {
+      patch: input.patch,
+      reanalyze: input.reanalyze === true,
+    }
+  }
+  return { patch: input, reanalyze: false }
+}
+
 export function useUpdateMediaConfiguration(mediaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { patch: MediaConfigurationPatch }) => {
-      const cfg = await updateMediaConfiguration(mediaId, input.patch)
-      // Quick timeline-build tasks: silence + text detection.
-      await reanalyzeMedia(mediaId, ["silence", "text"])
+    mutationFn: async (input: UpdateMediaConfigurationInput) => {
+      const { patch, reanalyze } = normalizeConfigUpdate(input)
+      const cfg = await updateMediaConfiguration(mediaId, patch)
+      // Silence drawer only — ship prefs must not re-trigger the pipeline.
+      if (reanalyze) {
+        await reanalyzeMedia(mediaId, ["silence", "text"])
+      }
       return cfg
     },
-    onSuccess: () => {
+    onSuccess: (_cfg, input) => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.media.configuration(mediaId),
       })
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.media.steps(mediaId),
-      })
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.media.detections(mediaId),
-      })
+      const { reanalyze } = normalizeConfigUpdate(input)
+      if (reanalyze) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.media.steps(mediaId),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.media.detections(mediaId),
+        })
+      }
     },
   })
 }

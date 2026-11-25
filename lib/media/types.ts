@@ -129,6 +129,8 @@ export type MediaConfiguration = {
   language?: string | null
   /** "" | parts:N | durationMs:N */
   masterSplit: string
+  burnSubtitles: boolean
+  outputPresetId?: string | null
   updatedAt: string
 }
 
@@ -148,4 +150,6 @@ export type MediaConfigurationPatch = {
   adsAction?: string
   language?: string | null
   masterSplit?: string
+  burnSubtitles?: boolean
+  outputPresetId?: string | null
 }

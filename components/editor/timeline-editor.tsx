@@ -131,6 +131,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   useRenderEvents(projectId)
   const [shippingClips, setShippingClips] = useState(false)
   const [burnSubtitles, setBurnSubtitles] = useState(false)
+  const [shipPrefsHydrated, setShipPrefsHydrated] = useState(false)
 
   const [preview, setPreview] = useState<Timeline | null>(null)
   const [viewMode, setViewMode] = useState<"saved" | "preview">("saved")
@@ -321,7 +322,24 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   ])
 
   useEffect(() => {
+    setShipPrefsHydrated(false)
+    setSelectedPresetId(null)
+    setBurnSubtitles(false)
+  }, [mediaId])
+
+  useEffect(() => {
+    if (shipPrefsHydrated || !configQuery.data) return
+    setBurnSubtitles(!!configQuery.data.burnSubtitles)
+    if (configQuery.data.outputPresetId) {
+      setSelectedPresetId(configQuery.data.outputPresetId)
+    }
+    setShipPrefsHydrated(true)
+  }, [configQuery.data, shipPrefsHydrated])
+
+  useEffect(() => {
+    if (!shipPrefsHydrated) return
     if (selectedPresetId || !presetsQuery.data?.length) return
+    if (configQuery.data?.outputPresetId) return
     const fallback = pickDefaultPreset(
       presetsQuery.data,
       media.data?.width,
@@ -329,10 +347,12 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     )
     if (fallback) setSelectedPresetId(fallback.id)
   }, [
+    shipPrefsHydrated,
     selectedPresetId,
     presetsQuery.data,
     media.data?.width,
     media.data?.height,
+    configQuery.data?.outputPresetId,
   ])
 
   const outputFrame = previewAspectStyle(
@@ -475,10 +495,31 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     return vertical?.id ?? null
   }, [presetsQuery.data])
 
-  function onSelectPreset(preset: OutputPreset) {
+  async function onSelectPreset(preset: OutputPreset) {
     if (editingLocked) return
     setSelectedPresetId(preset.id)
     setActionOk(null)
+    if (!mediaId) return
+    try {
+      await updateConfig.mutateAsync({ outputPresetId: preset.id })
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to save format"
+      )
+    }
+  }
+
+  async function onBurnSubtitlesChange(next: boolean) {
+    setBurnSubtitles(next)
+    if (!mediaId) return
+    try {
+      await updateConfig.mutateAsync({ burnSubtitles: next })
+    } catch (err) {
+      setBurnSubtitles(!next)
+      setActionError(
+        err instanceof Error ? err.message : "Failed to save burn subtitles"
+      )
+    }
   }
 
   async function onPreview() {
@@ -494,7 +535,15 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   async function onSaveSilence(payload: {
-    patch: Parameters<typeof updateConfig.mutateAsync>[0]["patch"]
+    patch: {
+      silenceEnabled?: boolean
+      detectionLevel?: string
+      paddingBeforeMs?: number
+      paddingAfterMs?: number
+      silenceMinDurationMs?: number
+      fillersEnabled?: boolean
+      repetitionsEnabled?: boolean
+    }
   }) {
     if (!mediaId) {
       setActionError("No media for silence settings")
@@ -506,7 +555,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       seenTimelineUpdateRef.current = false
       awaitingRebuildRef.current = true
       setAwaitingRebuild(true)
-      await updateConfig.mutateAsync(payload)
+      await updateConfig.mutateAsync({ ...payload, reanalyze: true })
       // Don't overwrite a completion that already landed during mutate.
       if (awaitingRebuildRef.current) {
         setActionOk("Regenerating silence & text — waiting for timeline…")
@@ -553,17 +602,20 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         force: true,
       })
       const toShip = selectedClips
+      // Queue clip jobs one-by-one; worker-render is serial (no parallel encodes).
       if (toShip.length > 0) {
-        const results = await Promise.allSettled(
-          toShip.map((c) =>
-            createClipRender(c.id, {
+        let failed = 0
+        for (const c of toShip) {
+          try {
+            await createClipRender(c.id, {
               ...(verticalPresetId ? { presetId: verticalPresetId } : {}),
               burnSubtitles,
               force: true,
             })
-          )
-        )
-        const failed = results.filter((r) => r.status === "rejected").length
+          } catch {
+            failed += 1
+          }
+        }
         if (failed > 0) {
           setActionError(
             `Master queued; ${failed}/${toShip.length} clip renders failed`
@@ -1076,8 +1128,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               type="checkbox"
               className="accent-[#b8ff3c]"
               checked={burnSubtitles}
-              disabled={busy}
-              onChange={(e) => setBurnSubtitles(e.target.checked)}
+              disabled={busy || updateConfig.isPending}
+              onChange={(e) => void onBurnSubtitlesChange(e.target.checked)}
             />
             <span>
               Incruster les SRT

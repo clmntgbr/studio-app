@@ -6,6 +6,7 @@ import {
 } from "@/components/base/video-player/video-player"
 import { MediaSettingsDrawer } from "@/components/media/media-settings-drawer"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   useMedia,
   useMediaConfiguration,
@@ -19,16 +20,24 @@ import { useMediaEvents } from "@/lib/media/use-media-events"
 import {
   formatFamily,
   pickDefaultPreset,
-  previewAspectStyle,
 } from "@/lib/output-presets/format"
+import type { OutputPreset } from "@/lib/output-presets/types"
 import { useOutputPresets } from "@/lib/output-presets/hooks"
 import { useParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 
-function aspectRatioParts(aspectRatio: string): { w: number; h: number } {
-  const [w, h] = aspectRatio.split("/").map((p) => Number(p.trim()))
-  if (w > 0 && h > 0) return { w, h }
-  return { w: 9, h: 16 }
+/** Phone preview is always TikTok 9:16; format only toggles bars vs crop. */
+const TIKTOK_ASPECT = 9 / 16
+
+function previewObjectFit(
+  preset: OutputPreset | null
+): "contain" | "cover" {
+  if (!preset) return "cover"
+  const family = formatFamily(preset)
+  // Vertical / cropped formats fill the phone. Others letterbox with black bars.
+  if (family === "portrait") return "cover"
+  if (preset.cropMode !== "none" && preset.aspectRatio === "9:16") return "cover"
+  return "contain"
 }
 
 export default function MediaWatchPage() {
@@ -36,6 +45,7 @@ export default function MediaWatchPage() {
   const mediaId = params.id
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [clipError, setClipError] = useState<string | null>(null)
+  const [previewPresetId, setPreviewPresetId] = useState<string | null>(null)
 
   const { data: media } = useMedia(mediaId)
   const { data: stepsPayload } = useMediaSteps(mediaId)
@@ -51,9 +61,11 @@ export default function MediaWatchPage() {
 
   const playerRef = useRef<VideoPlayerRef>(null)
   const mainStageRef = useRef<HTMLDivElement>(null)
+  const cropVideoRef = useRef<HTMLVideoElement | null>(null)
+  const skipPreviewRevertRef = useRef(false)
   const [mainVideo, setMainVideo] = useState<HTMLVideoElement | null>(null)
-  const [cropVideo, setCropVideo] = useState<HTMLVideoElement | null>(null)
-  const [cropHeight, setCropHeight] = useState<number | null>(null)
+  const [mainHeight, setMainHeight] = useState(0)
+  const [videoReady, setVideoReady] = useState(false)
 
   const clipsEnabled =
     !!projectId &&
@@ -68,10 +80,15 @@ export default function MediaWatchPage() {
     [projectClips, mediaId]
   )
 
+  useEffect(() => {
+    const saved = configQuery.data?.outputPresetId ?? null
+    if (saved) setPreviewPresetId(saved)
+  }, [configQuery.data?.outputPresetId])
+
   const selectedPreset = useMemo(() => {
-    const configuredId = configQuery.data?.outputPresetId
-    if (configuredId) {
-      const found = presets.find((p) => p.id === configuredId)
+    const id = previewPresetId ?? configQuery.data?.outputPresetId ?? null
+    if (id) {
+      const found = presets.find((p) => p.id === id)
       if (found) return found
     }
     return (
@@ -81,22 +98,24 @@ export default function MediaWatchPage() {
       presets.find((p) => formatFamily(p) === "portrait") ??
       pickDefaultPreset(presets, media?.width, media?.height)
     )
-  }, [configQuery.data?.outputPresetId, presets, media?.width, media?.height])
-
-  const cropFrame = previewAspectStyle(
-    selectedPreset,
+  }, [
+    previewPresetId,
+    configQuery.data?.outputPresetId,
+    presets,
     media?.width,
-    media?.height
-  )
-  const cropAspect = aspectRatioParts(cropFrame.aspectRatio)
+    media?.height,
+  ])
 
-  // Match crop height to the large player; width follows selected format.
+  const objectFit = previewObjectFit(selectedPreset)
+  const phoneHeight = mainHeight > 0 ? mainHeight : 220
+  const phoneWidth = Math.round(phoneHeight * TIKTOK_ASPECT)
+
   useEffect(() => {
     const stage = mainStageRef.current
     if (!stage) return
     const update = () => {
       const h = Math.round(stage.getBoundingClientRect().height)
-      if (h > 0) setCropHeight(h)
+      if (h > 0) setMainHeight(h)
     }
     update()
     const ro = new ResizeObserver(update)
@@ -104,19 +123,18 @@ export default function MediaWatchPage() {
     return () => ro.disconnect()
   }, [playback.data?.url])
 
-  // Capture the main <video> once VideoPlayer has mounted (ref is not ready on first paint).
   useEffect(() => {
     if (!playback.data?.url) {
       setMainVideo(null)
+      setVideoReady(false)
       return
     }
+    setVideoReady(false)
     let cancelled = false
     const attach = () => {
       const el = playerRef.current?.videoElement ?? null
       if (!cancelled) setMainVideo(el)
-      if (!el && !cancelled) {
-        requestAnimationFrame(attach)
-      }
+      if (!el && !cancelled) requestAnimationFrame(attach)
     }
     attach()
     return () => {
@@ -124,9 +142,27 @@ export default function MediaWatchPage() {
     }
   }, [playback.data?.url])
 
-  // Crop follows the large player: play / pause / seek / rate. Large player is the leader.
   useEffect(() => {
-    if (!mainVideo || !cropVideo) return
+    if (!mainVideo) {
+      setVideoReady(false)
+      return
+    }
+    const markReady = () => setVideoReady(true)
+    if (mainVideo.readyState >= 1) {
+      markReady()
+      return
+    }
+    mainVideo.addEventListener("loadedmetadata", markReady)
+    mainVideo.addEventListener("loadeddata", markReady)
+    return () => {
+      mainVideo.removeEventListener("loadedmetadata", markReady)
+      mainVideo.removeEventListener("loadeddata", markReady)
+    }
+  }, [mainVideo])
+
+  useEffect(() => {
+    const cropVideo = cropVideoRef.current
+    if (!mainVideo || !cropVideo || !videoReady) return
 
     cropVideo.muted = true
     cropVideo.playsInline = true
@@ -138,7 +174,7 @@ export default function MediaWatchPage() {
         try {
           cropVideo.currentTime = mainVideo.currentTime
         } catch {
-          // ignore seek before metadata
+          // ignore
         }
       }
     }
@@ -147,9 +183,7 @@ export default function MediaWatchPage() {
       syncTime(true)
       void cropVideo.play().catch(() => undefined)
     }
-    const followPause = () => {
-      cropVideo.pause()
-    }
+    const followPause = () => cropVideo.pause()
     const followSeek = () => syncTime(true)
     const followRate = () => {
       cropVideo.playbackRate = mainVideo.playbackRate
@@ -175,7 +209,7 @@ export default function MediaWatchPage() {
       mainVideo.removeEventListener("ratechange", followRate)
       mainVideo.removeEventListener("timeupdate", followTime)
     }
-  }, [mainVideo, cropVideo])
+  }, [mainVideo, videoReady, playback.data?.url])
 
   async function onToggleClip(clipId: string, selected: boolean) {
     if (!projectId) return
@@ -190,6 +224,7 @@ export default function MediaWatchPage() {
   }
 
   const src = playback.data?.url
+  const layoutReady = !!src && videoReady && mainHeight > 0
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-4 p-6">
@@ -204,61 +239,68 @@ export default function MediaWatchPage() {
       </div>
 
       <div className="flex flex-col items-stretch gap-4 lg:flex-row lg:items-start">
-        <div ref={mainStageRef} className="min-w-0 flex-1">
-          {src ? (
-            <VideoPlayer
-              ref={playerRef}
-              src={src}
-              size="md"
-              className="aspect-video w-full min-h-[200px]"
-            />
+        <div ref={mainStageRef} className="relative min-w-0 flex-1">
+          {!src ? (
+            <Skeleton className="aspect-video w-full min-h-[200px] rounded-xl" />
           ) : (
-            <div className="bg-muted/40 flex aspect-video w-full items-center justify-center rounded-xl border text-sm text-muted-foreground">
-              Loading video…
-            </div>
+            <>
+              <VideoPlayer
+                ref={playerRef}
+                src={src}
+                size="md"
+                className="aspect-video w-full min-h-[200px]"
+              />
+              {!layoutReady ? (
+                <Skeleton className="absolute inset-0 z-10 rounded-xl" />
+              ) : null}
+            </>
           )}
         </div>
 
         <div className="flex shrink-0 justify-center lg:justify-end">
-          <div
-            className="pointer-events-none relative overflow-hidden rounded-xl border bg-black"
-            style={{
-              height: cropHeight ?? undefined,
-              aspectRatio: cropFrame.aspectRatio,
-              width: cropHeight
-                ? cropHeight * (cropAspect.w / cropAspect.h)
-                : undefined,
-              maxWidth: "100%",
-            }}
-            aria-hidden
-          >
-            {src ? (
+          {!layoutReady ? (
+            <Skeleton
+              className="rounded-xl"
+              style={{
+                height: phoneHeight,
+                width: phoneWidth,
+              }}
+            />
+          ) : (
+            <div
+              className="pointer-events-none relative overflow-hidden rounded-xl border bg-black"
+              style={{
+                height: phoneHeight,
+                width: phoneWidth,
+              }}
+              aria-hidden
+            >
               <video
-                ref={setCropVideo}
+                ref={cropVideoRef}
                 className="size-full"
-                style={{ objectFit: cropFrame.objectFit }}
+                style={{ objectFit }}
                 src={src}
                 muted
                 playsInline
                 preload="metadata"
               />
-            ) : (
-              <div className="flex size-full items-center justify-center text-xs text-white/60">
-                …
-              </div>
-            )}
-            {selectedPreset ? (
-              <div className="absolute inset-x-0 bottom-2 text-center text-[11px] tracking-wide text-white/80 uppercase drop-shadow">
-                {selectedPreset.aspectRatio}
-              </div>
-            ) : null}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
       <MediaSettingsDrawer
         open={settingsOpen}
-        onOpenChange={setSettingsOpen}
+        onOpenChange={(open) => {
+          setSettingsOpen(open)
+          if (!open) {
+            if (skipPreviewRevertRef.current) {
+              skipPreviewRevertRef.current = false
+            } else {
+              setPreviewPresetId(configQuery.data?.outputPresetId ?? null)
+            }
+          }
+        }}
         config={configQuery.data}
         saving={updateConfig.isPending}
         presets={presets}
@@ -267,13 +309,21 @@ export default function MediaWatchPage() {
         clipsWaiting={!clipsEnabled}
         clipsError={clipError}
         clipsToggling={updateClipMut.isPending}
+        onOutputPresetPreview={setPreviewPresetId}
         onToggleClip={(clipId, selected) => {
           void onToggleClip(clipId, selected)
         }}
         onSave={({ patch, reanalyze }) => {
+          if (patch.outputPresetId) {
+            setPreviewPresetId(patch.outputPresetId)
+          }
+          skipPreviewRevertRef.current = true
           void updateConfig
             .mutateAsync({ patch, reanalyze })
             .then(() => setSettingsOpen(false))
+            .catch(() => {
+              skipPreviewRevertRef.current = false
+            })
         }}
       />
     </main>

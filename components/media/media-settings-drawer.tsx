@@ -127,6 +127,7 @@ export function MediaSettingsDrawer({
   clipsError,
   clipsToggling,
   onToggleClip,
+  onOutputPresetPreview,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -140,6 +141,8 @@ export function MediaSettingsDrawer({
   clipsError?: string | null
   clipsToggling?: boolean
   onToggleClip?: (clipId: string, selected: boolean) => void
+  /** Live-update the Watch crop preview without waiting for Save. */
+  onOutputPresetPreview?: (presetId: string) => void
 }) {
   const [draft, setDraft] = useState<Draft | null>(null)
 
@@ -414,9 +417,10 @@ export function MediaSettingsDrawer({
                               variant={active ? "default" : "outline"}
                               disabled={!!saving}
                               title={`${preset.name} · ${preset.aspectRatio}`}
-                              onClick={() =>
+                              onClick={() => {
                                 update({ outputPresetId: preset.id })
-                              }
+                                onOutputPresetPreview?.(preset.id)
+                              }}
                             >
                               {formatLabel(preset)} · {preset.aspectRatio}
                             </Button>

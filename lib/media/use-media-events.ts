@@ -54,9 +54,16 @@ export function useMediaEvents(
       void queryClient.invalidateQueries({
         queryKey: queryKeys.media.steps(targetMediaId),
       })
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.media.playback(targetMediaId),
-      })
+      // Only refresh stream when proxy/source may have changed — not on every step tick.
+      if (
+        event.type === "media.updated" ||
+        event.step === "proxy" ||
+        event.step === "probe"
+      ) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.media.playback(targetMediaId),
+        })
+      }
 
       if (
         event.type === "detections.updated" ||

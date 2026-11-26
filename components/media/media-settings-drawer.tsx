@@ -19,6 +19,11 @@ import {
   type MasterSplitMode,
 } from "@/lib/media/master-split"
 import type { Clip, MediaConfiguration } from "@/lib/media/types"
+import {
+  curatedPresets,
+  formatLabel,
+} from "@/lib/output-presets/format"
+import type { OutputPreset } from "@/lib/output-presets/types"
 import { formatDurationSeconds } from "@/lib/utils"
 import { useEffect, useMemo, useState } from "react"
 
@@ -50,6 +55,7 @@ type Draft = {
   repetitionsEnabled: boolean
   falseStartsEnabled: boolean
   burnSubtitles: boolean
+  outputPresetId: string | null
   splitMode: MasterSplitMode
   splitParts: number
   splitDurationMin: number
@@ -67,6 +73,7 @@ function draftFrom(cfg: MediaConfiguration): Draft {
     repetitionsEnabled: cfg.repetitionsEnabled,
     falseStartsEnabled: cfg.falseStartsEnabled,
     burnSubtitles: cfg.burnSubtitles,
+    outputPresetId: cfg.outputPresetId ?? null,
     splitMode: split.mode,
     splitParts: split.parts,
     splitDurationMin: split.durationMin,
@@ -101,6 +108,7 @@ export type MediaSettingsSavePayload = {
     repetitionsEnabled: boolean
     falseStartsEnabled: boolean
     burnSubtitles: boolean
+    outputPresetId: string | null
     masterSplit: string
   }
   reanalyze: boolean
@@ -112,6 +120,7 @@ export function MediaSettingsDrawer({
   config,
   saving,
   onSave,
+  presets = [],
   clips = [],
   clipsLoading,
   clipsWaiting,
@@ -124,6 +133,7 @@ export function MediaSettingsDrawer({
   config: MediaConfiguration | null | undefined
   saving?: boolean
   onSave: (payload: MediaSettingsSavePayload) => void
+  presets?: OutputPreset[]
   clips?: Clip[]
   clipsLoading?: boolean
   clipsWaiting?: boolean
@@ -139,6 +149,7 @@ export function MediaSettingsDrawer({
   }, [open, config])
 
   const current = draft ?? (config ? draftFrom(config) : null)
+  const formatItems = useMemo(() => curatedPresets(presets), [presets])
 
   const dirty = useMemo(() => {
     if (!config || !current) return false
@@ -175,6 +186,7 @@ export function MediaSettingsDrawer({
         repetitionsEnabled: current.repetitionsEnabled,
         falseStartsEnabled: current.falseStartsEnabled,
         burnSubtitles: current.burnSubtitles,
+        outputPresetId: current.outputPresetId,
         masterSplit: formatMasterSplit({
           mode: current.splitMode,
           parts: current.splitParts,
@@ -379,11 +391,41 @@ export function MediaSettingsDrawer({
                 <div className="space-y-1">
                   <h2 className="font-semibold">Ship</h2>
                   <p className="text-muted-foreground text-sm">
-                    Burn subtitles into the encode and optionally split the
-                    master.
+                    Output format for the right preview, burn-in, and master
+                    split.
                   </p>
                 </div>
                 <div className="flex flex-col gap-6 md:col-span-2">
+                  <div className="space-y-2">
+                    <Label>Output format</Label>
+                    {formatItems.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        Loading formats…
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {formatItems.map((preset) => {
+                          const active = current.outputPresetId === preset.id
+                          return (
+                            <Button
+                              key={preset.id}
+                              type="button"
+                              size="sm"
+                              variant={active ? "default" : "outline"}
+                              disabled={!!saving}
+                              title={`${preset.name} · ${preset.aspectRatio}`}
+                              onClick={() =>
+                                update({ outputPresetId: preset.id })
+                              }
+                            >
+                              {formatLabel(preset)} · {preset.aspectRatio}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   <SwitchRow
                     id="burn-subtitles"
                     label="Burn SRT"

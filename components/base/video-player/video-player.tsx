@@ -10,14 +10,7 @@
  */
 
 import { cn } from "@/lib/utils"
-import {
-  Maximize2,
-  Minimize2,
-  Pause,
-  Play,
-  Volume2,
-  VolumeX,
-} from "lucide-react"
+import { Pause, Play, Volume2, VolumeX } from "lucide-react"
 import {
   forwardRef,
   useCallback,
@@ -82,7 +75,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const [currentTime, setCurrentTime] = useState(0)
     const [duration, setDuration] = useState(0)
     const [playbackRate, setPlaybackRate] = useState(1)
-    const [isFullscreen, setIsFullscreen] = useState(false)
     const [showPoster, setShowPoster] = useState(!!thumbnailUrl)
     const [controlsVisible, setControlsVisible] = useState(true)
     const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -119,12 +111,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }
     }, [])
 
-    useEffect(() => {
-      const onFs = () => setIsFullscreen(!!document.fullscreenElement)
-      document.addEventListener("fullscreenchange", onFs)
-      return () => document.removeEventListener("fullscreenchange", onFs)
-    }, [])
-
     async function togglePlay() {
       const el = videoRef.current
       if (!el) return
@@ -142,17 +128,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       if (!el) return
       el.muted = !el.muted
       setMuted(el.muted)
-      bumpControls()
-    }
-
-    async function toggleFullscreen() {
-      const root = rootRef.current
-      if (!root) return
-      if (document.fullscreenElement) {
-        await document.exitFullscreen()
-      } else {
-        await root.requestFullscreen()
-      }
       bumpControls()
     }
 
@@ -220,7 +195,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           muted={muted}
           src={src}
           onClick={() => void togglePlay()}
-          onDoubleClick={() => void toggleFullscreen()}
           onPlay={() => {
             setPaused(false)
             setShowPoster(false)
@@ -370,32 +344,16 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               </span>
             ) : null}
 
-            <div className="ml-auto flex items-center gap-1">
-              {showSpeed ? (
-                <button
-                  type="button"
-                  className="rounded-full px-2 py-1 text-xs font-medium hover:bg-white/15"
-                  onClick={cycleSpeed}
-                  aria-label={`Change playback speed. Current speed: ${playbackRate}x`}
-                >
-                  {playbackRate}x
-                </button>
-              ) : null}
+            {showSpeed ? (
               <button
                 type="button"
-                className="flex size-8 items-center justify-center rounded-full hover:bg-white/15"
-                onClick={() => void toggleFullscreen()}
-                aria-label={
-                  isFullscreen ? "Exit fullscreen" : "Enter fullscreen"
-                }
+                className="ml-auto rounded-full px-2 py-1 text-xs font-medium hover:bg-white/15"
+                onClick={cycleSpeed}
+                aria-label={`Change playback speed. Current speed: ${playbackRate}x`}
               >
-                {isFullscreen ? (
-                  <Minimize2 className="size-4" />
-                ) : (
-                  <Maximize2 className="size-4" />
-                )}
+                {playbackRate}x
               </button>
-            </div>
+            ) : null}
           </div>
         </div>
       </div>

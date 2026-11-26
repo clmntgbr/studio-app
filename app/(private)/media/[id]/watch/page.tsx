@@ -16,8 +16,20 @@ import {
   useUpdateMediaConfiguration,
 } from "@/lib/media/hooks"
 import { useMediaEvents } from "@/lib/media/use-media-events"
+import {
+  formatFamily,
+  pickDefaultPreset,
+  previewAspectStyle,
+} from "@/lib/output-presets/format"
+import { useOutputPresets } from "@/lib/output-presets/hooks"
 import { useParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
+
+function aspectRatioParts(aspectRatio: string): { w: number; h: number } {
+  const [w, h] = aspectRatio.split("/").map((p) => Number(p.trim()))
+  if (w > 0 && h > 0) return { w, h }
+  return { w: 9, h: 16 }
+}
 
 export default function MediaWatchPage() {
   const params = useParams<{ id: string }>()
@@ -35,6 +47,7 @@ export default function MediaWatchPage() {
   const updateConfig = useUpdateMediaConfiguration(mediaId)
   const updateClipMut = useUpdateClip(projectId ?? "")
   const playback = useMediaPlayback(mediaId, !!mediaId)
+  const { data: presets = [] } = useOutputPresets()
 
   const playerRef = useRef<VideoPlayerRef>(null)
   const mainStageRef = useRef<HTMLDivElement>(null)
@@ -55,7 +68,29 @@ export default function MediaWatchPage() {
     [projectClips, mediaId]
   )
 
-  // Match crop height to the large player; width follows 9:16.
+  const selectedPreset = useMemo(() => {
+    const configuredId = configQuery.data?.outputPresetId
+    if (configuredId) {
+      const found = presets.find((p) => p.id === configuredId)
+      if (found) return found
+    }
+    return (
+      presets.find(
+        (p) => p.aspectRatio === "9:16" && formatFamily(p) === "portrait"
+      ) ??
+      presets.find((p) => formatFamily(p) === "portrait") ??
+      pickDefaultPreset(presets, media?.width, media?.height)
+    )
+  }, [configQuery.data?.outputPresetId, presets, media?.width, media?.height])
+
+  const cropFrame = previewAspectStyle(
+    selectedPreset,
+    media?.width,
+    media?.height
+  )
+  const cropAspect = aspectRatioParts(cropFrame.aspectRatio)
+
+  // Match crop height to the large player; width follows selected format.
   useEffect(() => {
     const stage = mainStageRef.current
     if (!stage) return
@@ -189,8 +224,10 @@ export default function MediaWatchPage() {
             className="pointer-events-none relative overflow-hidden rounded-xl border bg-black"
             style={{
               height: cropHeight ?? undefined,
-              aspectRatio: "9 / 16",
-              width: cropHeight ? cropHeight * (9 / 16) : undefined,
+              aspectRatio: cropFrame.aspectRatio,
+              width: cropHeight
+                ? cropHeight * (cropAspect.w / cropAspect.h)
+                : undefined,
               maxWidth: "100%",
             }}
             aria-hidden
@@ -198,7 +235,8 @@ export default function MediaWatchPage() {
             {src ? (
               <video
                 ref={setCropVideo}
-                className="size-full object-cover"
+                className="size-full"
+                style={{ objectFit: cropFrame.objectFit }}
                 src={src}
                 muted
                 playsInline
@@ -209,6 +247,11 @@ export default function MediaWatchPage() {
                 …
               </div>
             )}
+            {selectedPreset ? (
+              <div className="absolute inset-x-0 bottom-2 text-center text-[11px] tracking-wide text-white/80 uppercase drop-shadow">
+                {selectedPreset.aspectRatio}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -218,6 +261,7 @@ export default function MediaWatchPage() {
         onOpenChange={setSettingsOpen}
         config={configQuery.data}
         saving={updateConfig.isPending}
+        presets={presets}
         clips={clips}
         clipsLoading={clipsLoading}
         clipsWaiting={!clipsEnabled}

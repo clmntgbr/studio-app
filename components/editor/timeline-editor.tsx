@@ -10,6 +10,7 @@ import { buildEditorDecisions } from "@/lib/editor/decisions"
 import { formatClock, EMPTY_SEGMENTS } from "@/lib/editor/timeline-mapper"
 import { useRenderEvents } from "@/lib/editor/use-render-events"
 import { useTimelineEvents } from "@/lib/editor/use-timeline-events"
+import { useMediaEvents } from "@/lib/media/use-media-events"
 import { useTimelinePlayer } from "@/lib/editor/use-timeline-player"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
 import {
@@ -199,6 +200,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     if (fromSegments) return fromSegments
     return mediaList.data?.[0]?.id ?? null
   }, [timeline?.segments, mediaList.data])
+  useMediaEvents(projectId, mediaId)
 
   const media = useMedia(mediaId)
   const mediaSteps = useMediaSteps(mediaId)

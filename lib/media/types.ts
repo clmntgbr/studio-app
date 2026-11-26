@@ -146,9 +146,6 @@ export type MediaConfigurationPatch = {
   fillersEnabled?: boolean
   repetitionsEnabled?: boolean
   falseStartsEnabled?: boolean
-  sponsorsAction?: string
-  adsAction?: string
-  language?: string | null
   masterSplit?: string
   burnSubtitles?: boolean
   outputPresetId?: string | null

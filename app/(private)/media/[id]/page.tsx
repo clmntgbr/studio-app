@@ -9,6 +9,7 @@ import {
   useProjectClips,
   useUpdateClip,
 } from "@/lib/media/hooks"
+import { useMediaEvents } from "@/lib/media/use-media-events"
 import { chaptersFromArtifacts } from "@/lib/media/chapters"
 import { downloadRender } from "@/lib/output-presets/api"
 import {
@@ -45,6 +46,7 @@ export default function MediaPage() {
     useProjectRenders(projectId)
   const { data: presets = [] } = useOutputPresets()
   useRenderEvents(projectId)
+  useMediaEvents(projectId, mediaId)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [shipError, setShipError] = useState<string | null>(null)
 
@@ -145,11 +147,19 @@ export default function MediaPage() {
             : ""}
         </p>
         <p className="text-muted-foreground font-mono text-xs">{mediaId}</p>
-        {media?.projectId &&
-        (media.status === "ready" ||
-          media.status === "processing" ||
-          steps.some((s) => s.kind === "probe" && s.status === "completed")) ? (
-          <p>
+        <p className="flex flex-wrap gap-x-4 gap-y-1">
+          <Link
+            href={`/media/${mediaId}/watch`}
+            className="text-muted-foreground text-sm underline"
+          >
+            Watch
+          </Link>
+          {media?.projectId &&
+          (media.status === "ready" ||
+            media.status === "processing" ||
+            steps.some(
+              (s) => s.kind === "probe" && s.status === "completed"
+            )) ? (
             <Link
               href={`/projects/${media.projectId}/edit`}
               className="text-muted-foreground text-sm underline"
@@ -157,8 +167,8 @@ export default function MediaPage() {
               Open timeline editor
               {media.status !== "ready" ? " (proxy may still be encoding)" : ""}
             </Link>
-          </p>
-        ) : null}
+          ) : null}
+        </p>
       </header>
 
       {error ? (

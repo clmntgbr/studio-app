@@ -20,24 +20,12 @@ import {
 } from "./api"
 import type { Clip, MediaConfigurationPatch } from "./types"
 
-const PROCESSING = new Set([
-  "pending",
-  "uploading",
-  "fetching",
-  "processing",
-  "queued",
-])
-
 export function useProjectMedia(projectId: string | null) {
   return useQuery({
     queryKey: queryKeys.media.byProject(projectId ?? ""),
     queryFn: () => listProjectMedia(projectId as string),
     enabled: !!projectId,
-    refetchInterval: (query) => {
-      const items = query.state.data
-      if (!items?.length) return false
-      return items.some((m) => PROCESSING.has(m.status)) ? 3000 : false
-    },
+    // Progress via useMediaEvents (realtime) — no polling.
   })
 }
 
@@ -46,11 +34,7 @@ export function useMedia(id: string | null) {
     queryKey: queryKeys.media.detail(id ?? ""),
     queryFn: () => getMedia(id as string),
     enabled: !!id,
-    refetchInterval: (query) => {
-      const m = query.state.data
-      if (!m) return false
-      return PROCESSING.has(m.status) ? 2500 : false
-    },
+    // Progress via useMediaEvents (realtime) — no polling.
   })
 }
 
@@ -59,14 +43,7 @@ export function useMediaSteps(id: string | null) {
     queryKey: queryKeys.media.steps(id ?? ""),
     queryFn: () => getMediaSteps(id as string),
     enabled: !!id,
-    refetchInterval: (query) => {
-      const steps = query.state.data?.steps
-      if (!steps?.length) return 4000
-      const busy = steps.some(
-        (s) => s.status === "queued" || s.status === "running"
-      )
-      return busy ? 2500 : false
-    },
+    // Progress via useMediaEvents (realtime) — no polling.
   })
 }
 

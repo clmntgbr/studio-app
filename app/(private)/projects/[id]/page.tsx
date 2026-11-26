@@ -2,6 +2,7 @@
 
 import { uploadFileToProject } from "@/lib/media/api"
 import { useCreateMediaFromURL, useProjectMedia } from "@/lib/media/hooks"
+import { useMediaEvents } from "@/lib/media/use-media-events"
 import { queryKeys } from "@/lib/query/keys"
 import { useProject } from "@/lib/projects/hooks"
 import { formatDurationSeconds } from "@/lib/utils"
@@ -16,6 +17,7 @@ export default function ProjectPage() {
   const queryClient = useQueryClient()
   const { data: project, isLoading: projectLoading } = useProject(projectId)
   const { data: media, isLoading, error, refetch } = useProjectMedia(projectId)
+  useMediaEvents(projectId)
   const fromURL = useCreateMediaFromURL(projectId)
   const [url, setUrl] = useState("")
   const [uploading, setUploading] = useState(false)
@@ -128,20 +130,26 @@ export default function ProjectPage() {
         ) : null}
         <ul className="divide-y rounded-md border">
           {(media ?? []).map((m) => (
-            <li key={m.id}>
-              <Link
-                href={`/media/${m.id}`}
-                className="hover:bg-muted/40 flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
-              >
+            <li
+              key={m.id}
+              className="hover:bg-muted/40 flex items-center justify-between gap-3 px-4 py-3 text-sm"
+            >
+              <Link href={`/media/${m.id}`} className="min-w-0 flex-1">
                 <span className="font-medium">
                   {m.title || m.originalFilename || m.sourceUrl || m.id}
                 </span>
-                <span className="text-muted-foreground">
+                <span className="text-muted-foreground mt-1 block">
                   {m.sourceKind} · {m.status}
                   {m.durationMs != null
                     ? ` · ${formatDurationSeconds(m.durationMs)}`
                     : ""}
                 </span>
+              </Link>
+              <Link
+                href={`/media/${m.id}/watch`}
+                className="text-muted-foreground shrink-0 underline"
+              >
+                Watch
               </Link>
             </li>
           ))}

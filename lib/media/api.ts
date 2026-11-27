@@ -14,11 +14,8 @@ import {
 
 type Paginated<T> = { members: T[]; total: number }
 
-export async function listProjectMedia(projectId: string): Promise<Media[]> {
-  const response = await fetch(
-    `/api/projects/${projectId}/media?limit=100`,
-    { method: "GET" }
-  )
+export async function listMedia(): Promise<Media[]> {
+  const response = await fetch(`/api/media?limit=100`, { method: "GET" })
   if (!response.ok) {
     throw await parseApiError(response, "Failed to list media")
   }
@@ -129,8 +126,8 @@ export async function reanalyzeMedia(
   }
 }
 
-export async function listProjectClips(projectId: string): Promise<Clip[]> {
-  const response = await fetch(`/api/projects/${projectId}/clips`, {
+export async function listMediaClips(mediaId: string): Promise<Clip[]> {
+  const response = await fetch(`/api/media/${mediaId}/clips`, {
     method: "GET",
   })
   if (!response.ok) {
@@ -155,11 +152,8 @@ export async function updateClip(
   return response.json()
 }
 
-export async function createMediaFromURL(
-  projectId: string,
-  url: string
-): Promise<Media> {
-  const response = await fetch(`/api/projects/${projectId}/media/from-url`, {
+export async function createMediaFromURL(url: string): Promise<Media> {
+  const response = await fetch(`/api/media/from-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
@@ -170,16 +164,13 @@ export async function createMediaFromURL(
   return response.json()
 }
 
-export async function initiateUpload(
-  projectId: string,
-  input: {
-    filename: string
-    mimeType?: string
-    sizeBytes: number
-    partCount: number
-  }
-): Promise<InitiateUploadResult> {
-  const response = await fetch(`/api/projects/${projectId}/media/uploads`, {
+export async function initiateUpload(input: {
+  filename: string
+  mimeType?: string
+  sizeBytes: number
+  partCount: number
+}): Promise<InitiateUploadResult> {
+  const response = await fetch(`/api/media/uploads`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -209,13 +200,12 @@ export async function completeUpload(
 const PART_SIZE = 5 * 1024 * 1024
 
 /** Full browser multipart upload against MinIO presigned URLs. */
-export async function uploadFileToProject(
-  projectId: string,
+export async function uploadFile(
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<Media> {
   const partCount = Math.max(1, Math.ceil(file.size / PART_SIZE))
-  const init = await initiateUpload(projectId, {
+  const init = await initiateUpload({
     filename: file.name,
     mimeType: file.type || "application/octet-stream",
     sizeBytes: file.size,

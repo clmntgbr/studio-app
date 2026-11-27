@@ -18,7 +18,6 @@ export type TimelineDecision = {
 
 export type Timeline = {
   id?: string
-  projectId: string
   version?: number
   status?: string
   fingerprint: string

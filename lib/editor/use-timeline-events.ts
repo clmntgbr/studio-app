@@ -6,7 +6,6 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useEffect, useRef } from "react"
 
 export function useTimelineEvents(
-  projectId: string,
   mediaId: string | null,
   onUpdated: () => void
 ) {
@@ -18,12 +17,11 @@ export function useTimelineEvents(
   }, [onUpdated])
 
   useEffect(() => {
-    if (!projectId || !mediaId) return
+    if (!mediaId) return
 
-    return subscribeRealtime(projectId, (data) => {
+    return subscribeRealtime(mediaId, (data) => {
       const event = parseTimelineUpdated(data)
       if (!event) return
-      if (event.projectId && event.projectId !== projectId) return
       if (event.mediaId && event.mediaId !== mediaId) return
 
       onUpdatedRef.current()
@@ -43,12 +41,12 @@ export function useTimelineEvents(
         queryKey: queryKeys.media.detail(mediaId),
       })
     })
-  }, [mediaId, projectId, queryClient])
+  }, [mediaId, queryClient])
 }
 
 function parseTimelineUpdated(
   data: unknown
-): { projectId: string; mediaId: string } | null {
+): { mediaId: string } | null {
   if (!data || typeof data !== "object") return null
   const event = data as Record<string, unknown>
   const type =
@@ -56,7 +54,6 @@ function parseTimelineUpdated(
   if (type !== "timeline.updated") return null
 
   return {
-    projectId: readString(event, "projectId", "project_id"),
     mediaId: readString(event, "mediaId", "media_id"),
   }
 }

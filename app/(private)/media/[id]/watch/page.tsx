@@ -12,7 +12,7 @@ import {
   useMediaConfiguration,
   useMediaPlayback,
   useMediaSteps,
-  useProjectClips,
+  useMediaClips,
   useUpdateClip,
   useUpdateMediaConfiguration,
 } from "@/lib/media/hooks"
@@ -50,12 +50,11 @@ export default function MediaWatchPage() {
   const { data: media } = useMedia(mediaId)
   const { data: stepsPayload } = useMediaSteps(mediaId)
   const steps = stepsPayload?.steps ?? media?.steps ?? []
-  const projectId = media?.projectId ?? null
-  useMediaEvents(projectId, mediaId)
+    useMediaEvents(mediaId)
 
   const configQuery = useMediaConfiguration(mediaId)
   const updateConfig = useUpdateMediaConfiguration(mediaId)
-  const updateClipMut = useUpdateClip(projectId ?? "")
+  const updateClipMut = useUpdateClip(mediaId)
   const playback = useMediaPlayback(mediaId, !!mediaId)
   const { data: presets = [] } = useOutputPresets()
 
@@ -68,17 +67,14 @@ export default function MediaWatchPage() {
   const [videoReady, setVideoReady] = useState(false)
 
   const clipsEnabled =
-    !!projectId &&
-    (media?.status === "ready" ||
-      steps.some((s) => s.kind === "llm" && s.status === "completed"))
-  const { data: projectClips = [], isLoading: clipsLoading } = useProjectClips(
-    projectId,
+    media?.status === "ready" ||
+    media?.status === "rendering" ||
+    steps.some((s) => s.kind === "llm" && s.status === "completed")
+  const { data: mediaClips = [], isLoading: clipsLoading } = useMediaClips(
+    mediaId,
     clipsEnabled
   )
-  const clips = useMemo(
-    () => projectClips.filter((c) => c.mediaFileId === mediaId),
-    [projectClips, mediaId]
-  )
+  const clips = mediaClips
 
   useEffect(() => {
     const saved = configQuery.data?.outputPresetId ?? null
@@ -212,7 +208,7 @@ export default function MediaWatchPage() {
   }, [mainVideo, videoReady, playback.data?.url])
 
   async function onToggleClip(clipId: string, selected: boolean) {
-    if (!projectId) return
+    if (!mediaId) return
     setClipError(null)
     try {
       await updateClipMut.mutateAsync({ clipId, selected })

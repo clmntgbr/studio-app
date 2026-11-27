@@ -10,14 +10,14 @@ type PublicationHandler = (data: unknown) => void
 
 let client: Centrifuge | null = null
 let starting: Promise<void> | null = null
-let startingProjectId: string | null = null
+let startingMediaId: string | null = null
 let subscribers = 0
 let releaseTimer: ReturnType<typeof setTimeout> | null = null
-let activeProjectId: string | null = null
+let activeMediaId: string | null = null
 const handlers = new Set<PublicationHandler>()
 
 export function subscribeRealtime(
-  projectId: string,
+  mediaId: string,
   handler: PublicationHandler
 ) {
   handlers.add(handler)
@@ -27,15 +27,15 @@ export function subscribeRealtime(
     releaseTimer = null
   }
 
-  if (activeProjectId && activeProjectId !== projectId) {
+  if (activeMediaId && activeMediaId !== mediaId) {
     client?.disconnect()
     client = null
     clearRealtimeConnection()
     starting = null
-    startingProjectId = null
+    startingMediaId = null
   }
-  activeProjectId = projectId
-  void ensureClient(projectId)
+  activeMediaId = mediaId
+  void ensureClient(mediaId)
 
   return () => {
     handlers.delete(handler)
@@ -45,33 +45,31 @@ export function subscribeRealtime(
       if (subscribers > 0) return
       client?.disconnect()
       client = null
-      activeProjectId = null
+      activeMediaId = null
       starting = null
-      startingProjectId = null
+      startingMediaId = null
       clearRealtimeConnection()
     }, 100)
   }
 }
 
-function ensureClient(projectId: string) {
-  if (client && activeProjectId === projectId) return Promise.resolve()
-  if (starting && startingProjectId === projectId) return starting
-  if (starting && startingProjectId !== projectId) {
-    // Drop stale in-flight connect for another project.
+function ensureClient(mediaId: string) {
+  if (client && activeMediaId === mediaId) return Promise.resolve()
+  if (starting && startingMediaId === mediaId) return starting
+  if (starting && startingMediaId !== mediaId) {
     starting = null
-    startingProjectId = null
+    startingMediaId = null
   }
-  startingProjectId = projectId
-  starting = connect(projectId)
+  startingMediaId = mediaId
+  starting = connect(mediaId)
   return starting
 }
 
-async function connect(projectId: string) {
+async function connect(mediaId: string) {
   try {
     const connection = await getRealtimeConnection()
     if (!connection || subscribers === 0) return
-    // Project may have changed while awaiting connection credentials.
-    if (activeProjectId !== projectId) return
+    if (activeMediaId !== mediaId) return
     if (client) return
 
     const next = new Centrifuge(connection.wsUrl, {
@@ -93,23 +91,23 @@ async function connect(projectId: string) {
     userSub.on("publication", (ctx) => onPublication(ctx.data))
     userSub.subscribe()
 
-    const projectChannel = `projects:${projectId}`
-    if (projectChannel !== connection.channel) {
-      const projectSub = next.newSubscription(projectChannel)
-      projectSub.on("publication", (ctx) => onPublication(ctx.data))
-      projectSub.subscribe()
+    const mediaChannel = `media:${mediaId}`
+    if (mediaChannel !== connection.channel) {
+      const mediaSub = next.newSubscription(mediaChannel)
+      mediaSub.on("publication", (ctx) => onPublication(ctx.data))
+      mediaSub.subscribe()
     }
 
     next.connect()
-    if (activeProjectId !== projectId) {
+    if (activeMediaId !== mediaId) {
       next.disconnect()
       return
     }
     client = next
   } finally {
-    if (startingProjectId === projectId) {
+    if (startingMediaId === mediaId) {
       starting = null
-      startingProjectId = null
+      startingMediaId = null
     }
   }
 }

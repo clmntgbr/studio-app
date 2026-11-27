@@ -1,22 +1,53 @@
 "use client"
 
-import { useCreateProject, useProjects } from "@/lib/projects/hooks"
+import { uploadFile } from "@/lib/media/api"
+import {
+  useCreateMediaFromURL,
+  useMediaList,
+} from "@/lib/media/hooks"
+import { queryKeys } from "@/lib/query/keys"
 import { useUser } from "@/lib/user/hooks"
+import { formatDurationSeconds } from "@/lib/utils"
+import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { FormEvent, useState } from "react"
 
-export default function ProjectsPage() {
+export default function HomePage() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
   const { user, isLoading: userLoading } = useUser()
-  const { data: projects, isLoading, error, refetch } = useProjects()
-  const createProject = useCreateProject()
-  const [name, setName] = useState("")
+  const { data: media, isLoading, error, refetch } = useMediaList()
+  const fromURL = useCreateMediaFromURL()
+  const [url, setUrl] = useState("")
+  const [uploading, setUploading] = useState(false)
+  const [uploadPct, setUploadPct] = useState<number | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
-  async function onCreate(e: FormEvent) {
+  async function onFromURL(e: FormEvent) {
     e.preventDefault()
-    const trimmed = name.trim()
+    const trimmed = url.trim()
     if (!trimmed) return
-    await createProject.mutateAsync({ name: trimmed })
-    setName("")
+    const created = await fromURL.mutateAsync(trimmed)
+    setUrl("")
+    router.push(`/media/${created.id}`)
+  }
+
+  async function onFileChange(file: File | null) {
+    if (!file) return
+    setUploading(true)
+    setUploadPct(0)
+    setUploadError(null)
+    try {
+      const created = await uploadFile(file, setUploadPct)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.media.list() })
+      router.push(`/media/${created.id}`)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed")
+    } finally {
+      setUploading(false)
+      setUploadPct(null)
+    }
   }
 
   return (
@@ -24,7 +55,6 @@ export default function ProjectsPage() {
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Studio</h1>
         <p className="text-muted-foreground text-sm">
-          Minimal test UI —{" "}
           {userLoading
             ? "loading user…"
             : user
@@ -35,32 +65,51 @@ export default function ProjectsPage() {
       </header>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-medium">New project</h2>
-        <form onSubmit={onCreate} className="flex gap-2">
+        <h2 className="text-lg font-medium">Add by URL</h2>
+        <form onSubmit={onFromURL} className="flex gap-2">
           <input
             className="border-input bg-background flex-1 rounded-md border px-3 py-2 text-sm"
-            placeholder="Project name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            placeholder="https://…"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
           />
           <button
             type="submit"
-            disabled={createProject.isPending || !name.trim()}
+            disabled={fromURL.isPending || !url.trim()}
             className="bg-foreground text-background rounded-md px-4 py-2 text-sm disabled:opacity-50"
           >
-            {createProject.isPending ? "Creating…" : "Create"}
+            {fromURL.isPending ? "Queuing…" : "Fetch"}
           </button>
         </form>
-        {createProject.error ? (
+        {fromURL.error ? (
           <p className="text-sm text-red-600">
-            {(createProject.error as Error).message}
+            {(fromURL.error as Error).message}
           </p>
         ) : null}
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-lg font-medium">Upload file</h2>
+        <input
+          type="file"
+          accept="video/*,audio/*"
+          disabled={uploading}
+          onChange={(e) => void onFileChange(e.target.files?.[0] ?? null)}
+          className="block w-full text-sm"
+        />
+        {uploading ? (
+          <p className="text-muted-foreground text-sm">
+            Uploading… {uploadPct ?? 0}%
+          </p>
+        ) : null}
+        {uploadError ? (
+          <p className="text-sm text-red-600">{uploadError}</p>
+        ) : null}
+      </section>
+
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Projects</h2>
+          <h2 className="text-lg font-medium">Media</h2>
           <button
             type="button"
             onClick={() => refetch()}
@@ -74,20 +123,33 @@ export default function ProjectsPage() {
           <p className="text-sm text-red-600">{(error as Error).message}</p>
         ) : null}
         <ul className="divide-y rounded-md border">
-          {(projects ?? []).map((p) => (
-            <li key={p.id}>
+          {(media ?? []).map((m) => (
+            <li
+              key={m.id}
+              className="hover:bg-muted/40 flex items-center justify-between gap-3 px-4 py-3 text-sm"
+            >
+              <Link href={`/media/${m.id}`} className="min-w-0 flex-1">
+                <span className="font-medium">
+                  {m.title || m.originalFilename || m.sourceUrl || m.id}
+                </span>
+                <span className="text-muted-foreground mt-1 block">
+                  {m.sourceKind} · {m.status}
+                  {m.durationMs != null
+                    ? ` · ${formatDurationSeconds(m.durationMs)}`
+                    : ""}
+                </span>
+              </Link>
               <Link
-                href={`/projects/${p.id}`}
-                className="hover:bg-muted/40 flex items-center justify-between px-4 py-3 text-sm"
+                href={`/media/${m.id}/watch`}
+                className="text-muted-foreground shrink-0 underline"
               >
-                <span className="font-medium">{p.name}</span>
-                <span className="text-muted-foreground">{p.status}</span>
+                Watch
               </Link>
             </li>
           ))}
-          {!isLoading && (projects?.length ?? 0) === 0 ? (
+          {!isLoading && (media?.length ?? 0) === 0 ? (
             <li className="text-muted-foreground px-4 py-6 text-sm">
-              No projects yet.
+              No media yet.
             </li>
           ) : null}
         </ul>

@@ -23,7 +23,6 @@ export type MediaStepRun = {
 
 export type Media = {
   id: string
-  projectId: string
   position: number
   sourceKind: string
   sourceUrl?: string | null
@@ -84,7 +83,6 @@ export type Detection = {
 
 export type Clip = {
   id: string
-  projectId: string
   mediaFileId: string
   sourceStartMs: number
   sourceEndMs: number

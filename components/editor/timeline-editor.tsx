@@ -24,7 +24,7 @@ import {
   useMediaDetections,
   useMediaPlayback,
   useMediaSteps,
-  useProjectClips,
+  useMediaClips,
   useUpdateClip,
   useUpdateMediaConfiguration,
 } from "@/lib/media/hooks"
@@ -119,17 +119,16 @@ function KeptScrubber({
 
 export function TimelineEditor({ mediaId }: { mediaId: string }) {
   const media = useMedia(mediaId)
-  const projectId = media.data?.projectId ?? ""
-  const { data: saved, isLoading, error, refetch } =
+    const { data: saved, isLoading, error, refetch } =
     useMediaTimeline(mediaId)
   const previewMut = usePreviewTimeline(mediaId)
   const queryClient = useQueryClient()
   const createRender = useCreateMediaRender(mediaId)
-  const updateClipMut = useUpdateClip(projectId)
-  const clips = useProjectClips(projectId || null)
+  const updateClipMut = useUpdateClip(mediaId)
+  const clips = useMediaClips(mediaId || null)
   const presetsQuery = useOutputPresets()
   const rendersQuery = useMediaRenders(mediaId)
-  useRenderEvents(projectId || null, mediaId)
+  useRenderEvents(mediaId)
   const [renderingClips, setRenderingClips] = useState(false)
   const [burnSubtitles, setBurnSubtitles] = useState(false)
   const [renderPrefsHydrated, setRenderPrefsHydrated] = useState(false)
@@ -195,7 +194,7 @@ export function TimelineEditor({ mediaId }: { mediaId: string }) {
 
   const timeline = viewMode === "preview" && preview ? preview : saved
 
-  useMediaEvents(projectId || null, mediaId)
+  useMediaEvents(mediaId)
 
   const mediaSteps = useMediaSteps(mediaId)
   const playback = useMediaPlayback(mediaId, !!mediaId)
@@ -364,7 +363,7 @@ export function TimelineEditor({ mediaId }: { mediaId: string }) {
     void refetch()
   }, [refetch])
 
-  useTimelineEvents(projectId || "", mediaId, onTimelineRealtime)
+  useTimelineEvents(mediaId, onTimelineRealtime)
 
   // Finish wait only when silence+text are idle AND we saw a timeline.updated.
   useEffect(() => {
@@ -490,11 +489,11 @@ export function TimelineEditor({ mediaId }: { mediaId: string }) {
     media.data?.title ||
     media.data?.originalFilename ||
     "UNTITLED_SOURCE"
-  const projectLabel = title
+  const mediaLabel = title
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_|_$/g, "")
     .slice(0, 28)
-    .toUpperCase() || "PROJECT"
+    .toUpperCase() || "MEDIA"
 
   const removedPct = compressionPct(sourceDurationMs, outputDurationMs)
   const allClips = clips.data ?? []
@@ -687,7 +686,7 @@ export function TimelineEditor({ mediaId }: { mediaId: string }) {
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-baseline gap-3">
             <Link
-              href={`/projects/${projectId}`}
+              href="/"
               className="cf-label hover:text-[#ff4d9a]"
             >
               ← Studio
@@ -699,7 +698,7 @@ export function TimelineEditor({ mediaId }: { mediaId: string }) {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#8b93a7]">
             <span>
-              PROJECT / <span className="text-[#f2f4f8]">{projectLabel}</span>
+              MEDIA / <span className="text-[#f2f4f8]">{mediaLabel}</span>
             </span>
             <span>
               MEDIA /{" "}

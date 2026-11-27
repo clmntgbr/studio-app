@@ -6,7 +6,7 @@ import {
   useMediaDetections,
   useMediaLLMArtifacts,
   useMediaSteps,
-  useProjectClips,
+  useMediaClips,
   useUpdateClip,
 } from "@/lib/media/hooks"
 import { useMediaEvents } from "@/lib/media/use-media-events"
@@ -31,11 +31,10 @@ export default function MediaPage() {
   const { data: stepsPayload } = useMediaSteps(mediaId)
   const steps = stepsPayload?.steps ?? media?.steps ?? []
   const runs = stepsPayload?.runs ?? []
-  const projectId = media?.projectId ?? null
-  const updateClipMut = useUpdateClip(projectId ?? "")
+    const updateClipMut = useUpdateClip(mediaId)
   const { data: renders = [] } = useMediaRenders(mediaId)
-  useRenderEvents(projectId, mediaId)
-  useMediaEvents(projectId, mediaId)
+  useRenderEvents(mediaId)
+  useMediaEvents(mediaId)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -48,14 +47,8 @@ export default function MediaPage() {
   const { data: detections = [], isLoading: detectionsLoading } =
     useMediaDetections(mediaId, resultsOpts)
   const clipsEnabled =
-    !!media?.projectId &&
-    (media.status === "ready" ||
-      media.status === "rendering" ||
-      steps.some((s) => s.kind === "llm" && s.status === "completed"))
-  const { data: projectClips = [], isLoading: clipsLoading } = useProjectClips(
-    media?.projectId ?? null,
-    clipsEnabled
-  )
+    (media?.status === "ready" || media?.status === "rendering" || steps.some((s) => s.kind === "llm" && s.status === "completed"))
+  const { data: mediaClips = [], isLoading: clipsLoading } = useMediaClips(mediaId, clipsEnabled)
 
   async function onDownload(renderId: string) {
     setActionError(null)
@@ -70,7 +63,7 @@ export default function MediaPage() {
   }
 
   async function onToggleClip(clipId: string, selected: boolean) {
-    if (!projectId) return
+    if (!mediaId) return
     setActionError(null)
     try {
       await updateClipMut.mutateAsync({ clipId, selected })
@@ -89,10 +82,7 @@ export default function MediaPage() {
     () => chaptersFromArtifacts(artifacts),
     [artifacts]
   )
-  const clips = useMemo(
-    () => projectClips.filter((c) => c.mediaFileId === mediaId),
-    [projectClips, mediaId]
-  )
+  const clips = mediaClips
   const detectionCounts = useMemo(() => {
     const counts = new Map<string, number>()
     for (const d of detections) {
@@ -105,18 +95,9 @@ export default function MediaPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 p-6">
       <header className="space-y-2">
-        {media?.projectId ? (
-          <Link
-            href={`/projects/${media.projectId}`}
-            className="text-muted-foreground text-sm underline"
-          >
-            ← Project
-          </Link>
-        ) : (
-          <Link href="/" className="text-muted-foreground text-sm underline">
-            ← Projects
-          </Link>
-        )}
+        <Link href="/" className="text-muted-foreground text-sm underline">
+          ← Studio
+        </Link>
         <h1 className="text-2xl font-semibold tracking-tight">
           {isLoading
             ? "…"
@@ -152,7 +133,7 @@ export default function MediaPage() {
           >
             Watch
           </Link>
-          {media?.projectId &&
+          {media &&
           (media.status === "ready" || media.status === "rendering") ? (
             <Link
               href={`/media/${mediaId}/edit`}
@@ -244,7 +225,7 @@ export default function MediaPage() {
                         type="checkbox"
                         className="mt-1"
                         checked={c.selected}
-                        disabled={updateClipMut.isPending || !projectId}
+                        disabled={updateClipMut.isPending}
                         onChange={(e) =>
                           void onToggleClip(c.id, e.target.checked)
                         }

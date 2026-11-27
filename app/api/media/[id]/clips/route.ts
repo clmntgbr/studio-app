@@ -4,10 +4,10 @@ type Params = { params: Promise<{ id: string }> }
 
 export async function GET(request: Request, { params }: Params) {
   const { id } = await params
-  return proxyBackend(request, `/projects/${id}/renders`)
+  return proxyBackend(request, `/media/${id}/clips`)
 }
 
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params
-  return proxyBackend(request, `/projects/${id}/renders`)
+  return proxyBackend(request, `/media/${id}/clips`)
 }

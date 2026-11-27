@@ -16,52 +16,39 @@ const MEDIA_EVENT_TYPES = new Set([
 ])
 
 /** Subscribe to media/pipeline realtime events; invalidate instead of polling. */
-export function useMediaEvents(
-  projectId: string | null,
-  mediaId?: string | null
-) {
+export function useMediaEvents(mediaId: string | null) {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    if (!projectId) return
+    if (!mediaId) return
 
-    return subscribeRealtime(projectId, (data) => {
+    return subscribeRealtime(mediaId, (data) => {
       const event = parseMediaEvent(data)
       if (!event) return
-      if (event.projectId && event.projectId !== projectId) return
-      if (mediaId && event.mediaId && event.mediaId !== mediaId) return
+      if (event.mediaId && event.mediaId !== mediaId) return
 
-      if (event.type === "media.step_progress" && event.mediaId) {
-        patchStepProgress(
-          queryClient,
-          event.mediaId,
-          event.step,
-          event.percent
-        )
+      if (event.type === "media.step_progress") {
+        patchStepProgress(queryClient, mediaId, event.step, event.percent)
         return
       }
 
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.media.byProject(projectId),
-      })
-
-      const targetMediaId = event.mediaId || mediaId || ""
-      if (!targetMediaId) return
-
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.media.detail(targetMediaId),
+        queryKey: queryKeys.media.list(),
       })
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.media.steps(targetMediaId),
+        queryKey: queryKeys.media.detail(mediaId),
       })
-      // Only refresh stream when proxy/source may have changed — not on every step tick.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.steps(mediaId),
+      })
+
       if (
         event.type === "media.updated" ||
         event.step === "proxy" ||
         event.step === "probe"
       ) {
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.media.playback(targetMediaId),
+          queryKey: queryKeys.media.playback(mediaId),
         })
       }
 
@@ -72,7 +59,7 @@ export function useMediaEvents(
         event.step === "llm"
       ) {
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.media.detections(targetMediaId),
+          queryKey: queryKeys.media.detections(mediaId),
         })
       }
 
@@ -82,14 +69,14 @@ export function useMediaEvents(
         event.step === "transcribe"
       ) {
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.media.llmArtifacts(targetMediaId),
+          queryKey: queryKeys.media.llmArtifacts(mediaId),
         })
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.clips.byProject(projectId),
+          queryKey: queryKeys.clips.byMedia(mediaId),
         })
       }
     })
-  }, [mediaId, projectId, queryClient])
+  }, [mediaId, queryClient])
 }
 
 function patchStepProgress(
@@ -156,7 +143,6 @@ function patchStepProgress(
 
 function parseMediaEvent(data: unknown): {
   type: string
-  projectId: string
   mediaId: string
   step: string
   percent?: number
@@ -177,7 +163,6 @@ function parseMediaEvent(data: unknown): {
 
   return {
     type,
-    projectId: readString(event, "projectId", "project_id"),
     mediaId: readString(event, "mediaId", "media_id"),
     step: readString(event, "step"),
     percent: Number.isFinite(percent) ? percent : undefined,

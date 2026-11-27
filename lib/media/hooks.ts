@@ -8,24 +8,22 @@ import {
   getMediaConfiguration,
   getMediaPlayback,
   getMediaSteps,
+  listMedia,
+  listMediaClips,
   listMediaDetections,
   listMediaLLMArtifacts,
-  listProjectClips,
-  listProjectMedia,
   mediaStreamUrl,
   reanalyzeMedia,
   updateClip,
   updateMediaConfiguration,
-  uploadFileToProject,
+  uploadFile,
 } from "./api"
 import type { Clip, MediaConfigurationPatch } from "./types"
 
-export function useProjectMedia(projectId: string | null) {
+export function useMediaList() {
   return useQuery({
-    queryKey: queryKeys.media.byProject(projectId ?? ""),
-    queryFn: () => listProjectMedia(projectId as string),
-    enabled: !!projectId,
-    // Progress via useMediaEvents (realtime) — no polling.
+    queryKey: queryKeys.media.list(),
+    queryFn: listMedia,
   })
 }
 
@@ -34,7 +32,6 @@ export function useMedia(id: string | null) {
     queryKey: queryKeys.media.detail(id ?? ""),
     queryFn: () => getMedia(id as string),
     enabled: !!id,
-    // Progress via useMediaEvents (realtime) — no polling.
   })
 }
 
@@ -43,7 +40,6 @@ export function useMediaSteps(id: string | null) {
     queryKey: queryKeys.media.steps(id ?? ""),
     queryFn: () => getMediaSteps(id as string),
     enabled: !!id,
-    // Progress via useMediaEvents (realtime) — no polling.
   })
 }
 
@@ -84,22 +80,22 @@ export function useMediaDetections(
   })
 }
 
-export function useProjectClips(projectId: string | null, enabled = true) {
+export function useMediaClips(mediaId: string | null, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.clips.byProject(projectId ?? ""),
-    queryFn: () => listProjectClips(projectId as string),
-    enabled: !!projectId && enabled,
+    queryKey: queryKeys.clips.byMedia(mediaId ?? ""),
+    queryFn: () => listMediaClips(mediaId as string),
+    enabled: !!mediaId && enabled,
   })
 }
 
 /** Toggle include-in-render for a proposed clip (LLM proposals stay; videos only if selected). */
-export function useUpdateClip(projectId: string) {
+export function useUpdateClip(mediaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { clipId: string; selected: boolean }) =>
       updateClip(input.clipId, { selected: input.selected }),
     onSuccess: (clip) => {
-      const key = queryKeys.clips.byProject(projectId)
+      const key = queryKeys.clips.byMedia(mediaId)
       queryClient.setQueryData<Clip[]>(key, (prev) => {
         const list = prev ?? []
         return list.map((c) => (c.id === clip.id ? clip : c))
@@ -112,7 +108,6 @@ export function useMediaPlayback(mediaId: string | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.media.playback(mediaId ?? ""),
     queryFn: async () => {
-      // Prefer proxy; fall back to original source while proxy encodes.
       const playback = await getMediaPlayback(mediaId as string, "auto")
       const kind =
         playback.kind === "source" || playback.kind === "proxy"
@@ -126,7 +121,6 @@ export function useMediaPlayback(mediaId: string | null, enabled = true) {
     },
     enabled: !!mediaId && enabled,
     staleTime: 10 * 60 * 1000,
-    // Upgrade to proxy once ready without blocking early edit.
     refetchInterval: (query) =>
       query.state.data?.kind === "source" ? 5_000 : false,
   })
@@ -163,7 +157,6 @@ export function useUpdateMediaConfiguration(mediaId: string) {
     mutationFn: async (input: UpdateMediaConfigurationInput) => {
       const { patch, reanalyze } = normalizeConfigUpdate(input)
       const cfg = await updateMediaConfiguration(mediaId, patch)
-      // Silence drawer only — render prefs must not re-trigger the pipeline.
       if (reanalyze) {
         await reanalyzeMedia(mediaId, ["silence", "text"])
       }
@@ -186,24 +179,24 @@ export function useUpdateMediaConfiguration(mediaId: string) {
   })
 }
 
-export function useCreateMediaFromURL(projectId: string) {
+export function useCreateMediaFromURL() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (url: string) => createMediaFromURL(projectId, url),
+    mutationFn: (url: string) => createMediaFromURL(url),
     onSuccess: () =>
       queryClient.invalidateQueries({
-        queryKey: queryKeys.media.byProject(projectId),
+        queryKey: queryKeys.media.list(),
       }),
   })
 }
 
-export function useUploadMedia(projectId: string) {
+export function useUploadMedia() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => uploadFileToProject(projectId, file),
+    mutationFn: (file: File) => uploadFile(file),
     onSuccess: () =>
       queryClient.invalidateQueries({
-        queryKey: queryKeys.media.byProject(projectId),
+        queryKey: queryKeys.media.list(),
       }),
   })
 }

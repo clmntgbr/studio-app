@@ -28,7 +28,7 @@ export function useTimelineEvents(
 
       onUpdatedRef.current()
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.timeline.byProject(projectId),
+        queryKey: queryKeys.timeline.byMedia(mediaId),
       })
       void queryClient.invalidateQueries({
         queryKey: queryKeys.media.detections(mediaId),

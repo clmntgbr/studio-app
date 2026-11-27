@@ -53,7 +53,7 @@ function resultsEnabled(
   steps: { kind: string; status: string }[] | undefined
 ) {
   if (!mediaId) return false
-  if (mediaStatus === "ready") return true
+  if (mediaStatus === "ready" || mediaStatus === "rendering") return true
   if (!steps?.length) return false
   return steps.some(
     (s) =>
@@ -92,7 +92,7 @@ export function useProjectClips(projectId: string | null, enabled = true) {
   })
 }
 
-/** Toggle include-in-Ship for a proposed clip (LLM proposals stay; videos only if selected). */
+/** Toggle include-in-render for a proposed clip (LLM proposals stay; videos only if selected). */
 export function useUpdateClip(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -163,7 +163,7 @@ export function useUpdateMediaConfiguration(mediaId: string) {
     mutationFn: async (input: UpdateMediaConfigurationInput) => {
       const { patch, reanalyze } = normalizeConfigUpdate(input)
       const cfg = await updateMediaConfiguration(mediaId, patch)
-      // Silence drawer only — ship prefs must not re-trigger the pipeline.
+      // Silence drawer only — render prefs must not re-trigger the pipeline.
       if (reanalyze) {
         await reanalyzeMedia(mediaId, ["silence", "text"])
       }

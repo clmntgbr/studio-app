@@ -8,7 +8,7 @@ const PIPELINE: { id: string; label: string; kinds: string[] }[] = [
   { id: "reframe", label: "REFRAME", kinds: ["reframe"] },
   { id: "dub", label: "DUB", kinds: [] },
   { id: "caption", label: "CAPTION", kinds: ["llm"] },
-  { id: "ship", label: "SHIP", kinds: [] },
+  { id: "render", label: "RENDER", kinds: ["render"] },
 ]
 
 function stepState(
@@ -31,29 +31,15 @@ function stepState(
 export function PipelineSteps({
   steps,
   timelineReady,
-  shipping,
-  shipped,
 }: {
   steps?: MediaStep[]
   timelineReady: boolean
-  shipping: boolean
-  shipped: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {PIPELINE.map((stage, index) => {
         let forced: "active" | "done" | "idle" | undefined
         if (stage.id === "recut" && timelineReady) forced = "done"
-        if (stage.id === "ship" && shipped) forced = "done"
-        if (
-          stage.id === "ship" &&
-          (shipping || (timelineReady && !shipped))
-        ) {
-          forced = "active"
-        }
-        if (stage.id === "dub" || stage.id === "caption") {
-          if (timelineReady && !shipped) forced = forced ?? "idle"
-        }
         const state = stepState(stage.kinds, steps, forced)
         return (
           <div key={stage.id} className="flex items-center gap-1.5">

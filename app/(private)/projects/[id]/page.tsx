@@ -60,14 +60,16 @@ export default function ProjectPage() {
           {projectLoading ? "…" : (project?.name ?? "Project")}
         </h1>
         <p className="text-muted-foreground font-mono text-xs">{projectId}</p>
-        <p>
-          <Link
-            href={`/projects/${projectId}/edit`}
-            className="text-muted-foreground text-sm underline"
-          >
-            Open timeline editor
-          </Link>
-        </p>
+        {media?.[0]?.id ? (
+          <p>
+            <Link
+              href={`/media/${media[0].id}/edit`}
+              className="text-muted-foreground text-sm underline"
+            >
+              Open timeline editor
+            </Link>
+          </p>
+        ) : null}
       </header>
 
       <section className="space-y-3">

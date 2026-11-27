@@ -15,6 +15,7 @@ export type OutputPreset = {
 export type RenderJob = {
   id: string
   projectId: string
+  mediaFileId: string
   timelineId: string
   kind: string
   strategy: string

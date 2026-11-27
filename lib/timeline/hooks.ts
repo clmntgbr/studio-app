@@ -2,39 +2,22 @@
 
 import { queryKeys } from "@/lib/query/keys"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  getProjectTimeline,
-  previewProjectTimeline,
-  validateProjectTimeline,
-} from "./api"
+import { getMediaTimeline, previewMediaTimeline } from "./api"
 
-export function useProjectTimeline(projectId: string | null) {
+export function useMediaTimeline(mediaId: string | null) {
   return useQuery({
-    queryKey: queryKeys.timeline.byProject(projectId ?? ""),
-    queryFn: () => getProjectTimeline(projectId as string),
-    enabled: !!projectId,
-    retry: (failureCount, error) => {
-      const msg = error instanceof Error ? error.message : ""
-      if (msg.toLowerCase().includes("not found")) return false
-      return failureCount < 2
-    },
+    queryKey: queryKeys.timeline.byMedia(mediaId ?? ""),
+    queryFn: () => getMediaTimeline(mediaId as string),
+    enabled: !!mediaId,
   })
 }
 
-export function usePreviewTimeline(projectId: string) {
-  return useMutation({
-    mutationFn: (mediaId?: string) =>
-      previewProjectTimeline(projectId, mediaId),
-  })
-}
-
-export function useValidateTimeline(projectId: string) {
+export function usePreviewTimeline(mediaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (version: number) =>
-      validateProjectTimeline(projectId, version),
+    mutationFn: () => previewMediaTimeline(mediaId),
     onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.timeline.byProject(projectId), data)
+      queryClient.setQueryData(queryKeys.timeline.byMedia(mediaId), data)
     },
   })
 }

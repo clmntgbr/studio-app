@@ -6,19 +6,23 @@ import { subscribeRealtime } from "@/lib/realtime/subscribe"
 import { useQueryClient } from "@tanstack/react-query"
 import { useEffect } from "react"
 
-/** Subscribe to project render realtime events; no polling. */
-export function useRenderEvents(projectId: string | null) {
+/** Subscribe to project render realtime events; cache keyed by media. */
+export function useRenderEvents(
+  projectId: string | null,
+  mediaId: string | null
+) {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    if (!projectId) return
+    if (!projectId || !mediaId) return
 
     return subscribeRealtime(projectId, (data) => {
       const event = parseRenderEvent(data)
       if (!event) return
       if (event.projectId && event.projectId !== projectId) return
+      if (event.mediaFileId && event.mediaFileId !== mediaId) return
 
-      const key = queryKeys.renders.byProject(projectId)
+      const key = queryKeys.renders.byMedia(mediaId)
 
       if (event.type === "render.progress" && event.renderId) {
         queryClient.setQueryData<RenderJob[]>(key, (prev) => {
@@ -39,15 +43,22 @@ export function useRenderEvents(projectId: string | null) {
         return
       }
 
-      // completed / failed — refresh list from API once
+      // completed / failed — refresh renders + render processing step
       void queryClient.invalidateQueries({ queryKey: key })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.steps(mediaId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.detail(mediaId),
+      })
     })
-  }, [projectId, queryClient])
+  }, [mediaId, projectId, queryClient])
 }
 
 function parseRenderEvent(data: unknown): {
   type: string
   projectId: string
+  mediaFileId: string
   renderId: string
   percent?: number
 } | null {
@@ -74,6 +85,7 @@ function parseRenderEvent(data: unknown): {
   return {
     type,
     projectId: readString(event, "projectId", "project_id"),
+    mediaFileId: readString(event, "mediaFileId", "media_file_id", "mediaId"),
     renderId: readString(event, "renderId", "render_id"),
     percent: Number.isFinite(percent) ? percent : undefined,
   }

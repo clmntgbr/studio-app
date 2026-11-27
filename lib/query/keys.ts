@@ -31,8 +31,8 @@ export const queryKeys = {
   },
   timeline: {
     all: ["timeline"] as const,
-    byProject: (projectId: string) =>
-      [...queryKeys.timeline.all, "project", projectId] as const,
+    byMedia: (mediaId: string) =>
+      [...queryKeys.timeline.all, "media", mediaId] as const,
   },
   outputPresets: {
     all: ["output-presets"] as const,
@@ -40,7 +40,7 @@ export const queryKeys = {
   },
   renders: {
     all: ["renders"] as const,
-    byProject: (projectId: string) =>
-      [...queryKeys.renders.all, "project", projectId] as const,
+    byMedia: (mediaId: string) =>
+      [...queryKeys.renders.all, "media", mediaId] as const,
   },
 }

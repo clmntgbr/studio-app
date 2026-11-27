@@ -3,9 +3,9 @@
 import { queryKeys } from "@/lib/query/keys"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  createProjectRender,
+  createMediaRender,
   listOutputPresets,
-  listProjectRenders,
+  listMediaRenders,
 } from "./api"
 import type { RenderJob } from "./types"
 
@@ -17,16 +17,16 @@ export function useOutputPresets() {
   })
 }
 
-export function useProjectRenders(projectId: string | null) {
+export function useMediaRenders(mediaId: string | null) {
   return useQuery({
-    queryKey: queryKeys.renders.byProject(projectId ?? ""),
-    queryFn: () => listProjectRenders(projectId as string),
-    enabled: !!projectId,
+    queryKey: queryKeys.renders.byMedia(mediaId ?? ""),
+    queryFn: () => listMediaRenders(mediaId as string),
+    enabled: !!mediaId,
     // Progress / completion via realtime (useRenderEvents) — no polling.
   })
 }
 
-export function useCreateProjectRender(projectId: string) {
+export function useCreateMediaRender(mediaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: {
@@ -35,12 +35,18 @@ export function useCreateProjectRender(projectId: string) {
       burnSubtitles?: boolean
       subtitleStyleId?: string
       force?: boolean
-    }) => createProjectRender(projectId, input),
+    }) => createMediaRender(mediaId, input),
     onSuccess: (render) => {
-      const key = queryKeys.renders.byProject(projectId)
+      const key = queryKeys.renders.byMedia(mediaId)
       queryClient.setQueryData<RenderJob[]>(key, (prev) => {
         const list = prev ?? []
         return [render, ...list.filter((r) => r.id !== render.id)]
+      })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.steps(mediaId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.media.detail(mediaId),
       })
     },
   })

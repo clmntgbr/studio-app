@@ -333,7 +333,7 @@ export function MediaSettingsDrawer({
                 <div className="space-y-1">
                   <h2 className="font-semibold">Clips</h2>
                   <p className="text-muted-foreground text-sm">
-                    Proposed LLM clips. Check those to include in the next Ship.
+                    Proposed LLM clips. Check those to include when encoding.
                   </p>
                 </div>
                 <div className="flex flex-col gap-4 md:col-span-2">
@@ -392,10 +392,9 @@ export function MediaSettingsDrawer({
 
               <div className="grid grid-cols-1 gap-10 md:grid-cols-3">
                 <div className="space-y-1">
-                  <h2 className="font-semibold">Ship</h2>
+                  <h2 className="font-semibold">Output</h2>
                   <p className="text-muted-foreground text-sm">
-                    Output format for the right preview, burn-in, and master
-                    split.
+                    Format for the right preview, burn-in, and master split.
                   </p>
                 </div>
                 <div className="flex flex-col gap-6 md:col-span-2">

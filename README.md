@@ -1,6 +1,6 @@
 # Studio App
 
-Next.js front for **Studio**: projects, media pipeline status, and the **Clip Factory** timeline editor (Ship master + selected vertical clips).
+Next.js front for **Studio**: projects, media pipeline status, and the **Clip Factory** timeline editor (Render master + selected vertical clips).
 
 API: sibling repo `studio-api` (default `http://localhost:4000`).
 
@@ -52,8 +52,8 @@ Route: project timeline / edit UI (`components/editor/timeline-editor.tsx`).
 | Format (output preset) | `media_configuration.output_preset_id` | Restored on reload |
 | Incruster les SRT | `media_configuration.burn_subtitles` | Burn ASS into master + selected clips |
 | Split master | `media_configuration.master_split` | `parts:N` or `durationMs:N` after master encode |
-| Clip checkboxes | `clip.selected` | Included in Ship as vertical encodes |
-| Ship | — | Master (`force`) then clips **sequentially**; downloads via `/api/renders/:id/download` (+ `?part=`) |
+| Clip checkboxes | `clip.selected` | Included in Render as vertical encodes |
+| Render | — | Master (`force`) then clips **sequentially**; downloads via `/api/renders/:id/download` (+ `?part=`) |
 
 Silence / cut density opens the silence drawer and may reanalyze (`silence` + `text`) then wait for timeline rebuild over realtime.
 
@@ -68,7 +68,7 @@ app/(private)/          # projects, media, editor
 app/api/                # BFF proxies to studio-api
 components/editor/      # Clip Factory UI
 lib/media/              # media + configuration + clips
-lib/output-presets/     # presets, Ship, download
+lib/output-presets/     # presets, render, download
 lib/timeline/           # timeline queries / preview
 lib/realtime/           # Centrifugo connection
 ```

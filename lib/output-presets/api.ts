@@ -9,8 +9,8 @@ export async function listOutputPresets(): Promise<OutputPreset[]> {
   return response.json()
 }
 
-export async function createProjectRender(
-  projectId: string,
+export async function createMediaRender(
+  mediaId: string,
   input: {
     presetId: string
     kind?: string
@@ -19,7 +19,7 @@ export async function createProjectRender(
     force?: boolean
   }
 ): Promise<RenderJob> {
-  const response = await fetch(`/api/projects/${projectId}/renders`, {
+  const response = await fetch(`/api/media/${mediaId}/renders`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -38,7 +38,7 @@ export async function createProjectRender(
   return response.json()
 }
 
-/** Ship one LLM/manual clip as its own vertical (or chosen preset) encode. */
+/** Render one LLM/manual clip as its own vertical (or chosen preset) encode. */
 export async function createClipRender(
   clipId: string,
   input?: {
@@ -66,10 +66,8 @@ export async function createClipRender(
   return response.json()
 }
 
-export async function listProjectRenders(
-  projectId: string
-): Promise<RenderJob[]> {
-  const response = await fetch(`/api/projects/${projectId}/renders`, {
+export async function listMediaRenders(mediaId: string): Promise<RenderJob[]> {
+  const response = await fetch(`/api/media/${mediaId}/renders`, {
     method: "GET",
   })
   if (!response.ok) {

@@ -25,7 +25,6 @@ import {
   useMediaPlayback,
   useMediaSteps,
   useProjectClips,
-  useProjectMedia,
   useUpdateClip,
   useUpdateMediaConfiguration,
 } from "@/lib/media/hooks"
@@ -36,14 +35,14 @@ import {
 } from "@/lib/output-presets/format"
 import { createClipRender, downloadRender } from "@/lib/output-presets/api"
 import {
-  useCreateProjectRender,
+  useCreateMediaRender,
   useOutputPresets,
-  useProjectRenders,
+  useMediaRenders,
 } from "@/lib/output-presets/hooks"
 import { queryKeys } from "@/lib/query/keys"
 import { useQueryClient } from "@tanstack/react-query"
 import type { OutputPreset } from "@/lib/output-presets/types"
-import { usePreviewTimeline, useProjectTimeline } from "@/lib/timeline/hooks"
+import { usePreviewTimeline, useMediaTimeline } from "@/lib/timeline/hooks"
 import type { Timeline } from "@/lib/timeline/types"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -118,21 +117,22 @@ function KeptScrubber({
   )
 }
 
-export function TimelineEditor({ projectId }: { projectId: string }) {
+export function TimelineEditor({ mediaId }: { mediaId: string }) {
+  const media = useMedia(mediaId)
+  const projectId = media.data?.projectId ?? ""
   const { data: saved, isLoading, error, refetch } =
-    useProjectTimeline(projectId)
-  const previewMut = usePreviewTimeline(projectId)
+    useMediaTimeline(mediaId)
+  const previewMut = usePreviewTimeline(mediaId)
   const queryClient = useQueryClient()
-  const createRender = useCreateProjectRender(projectId)
+  const createRender = useCreateMediaRender(mediaId)
   const updateClipMut = useUpdateClip(projectId)
-  const mediaList = useProjectMedia(projectId)
-  const clips = useProjectClips(projectId)
+  const clips = useProjectClips(projectId || null)
   const presetsQuery = useOutputPresets()
-  const rendersQuery = useProjectRenders(projectId)
-  useRenderEvents(projectId)
-  const [shippingClips, setShippingClips] = useState(false)
+  const rendersQuery = useMediaRenders(mediaId)
+  useRenderEvents(projectId || null, mediaId)
+  const [renderingClips, setRenderingClips] = useState(false)
   const [burnSubtitles, setBurnSubtitles] = useState(false)
-  const [shipPrefsHydrated, setShipPrefsHydrated] = useState(false)
+  const [renderPrefsHydrated, setRenderPrefsHydrated] = useState(false)
 
   const [preview, setPreview] = useState<Timeline | null>(null)
   const [viewMode, setViewMode] = useState<"saved" | "preview">("saved")
@@ -195,18 +195,12 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
   const timeline = viewMode === "preview" && preview ? preview : saved
 
-  const mediaId = useMemo(() => {
-    const fromSegments = timeline?.segments[0]?.mediaFileId
-    if (fromSegments) return fromSegments
-    return mediaList.data?.[0]?.id ?? null
-  }, [timeline?.segments, mediaList.data])
-  useMediaEvents(projectId, mediaId)
+  useMediaEvents(projectId || null, mediaId)
 
-  const media = useMedia(mediaId)
   const mediaSteps = useMediaSteps(mediaId)
   const playback = useMediaPlayback(mediaId, !!mediaId)
   const configQuery = useMediaConfiguration(mediaId)
-  const updateConfig = useUpdateMediaConfiguration(mediaId ?? "")
+  const updateConfig = useUpdateMediaConfiguration(mediaId)
   const detections = useMediaDetections(mediaId, {
     mediaStatus: media.data?.status,
     steps: media.data?.steps ?? mediaSteps.data?.steps,
@@ -324,22 +318,22 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   ])
 
   useEffect(() => {
-    setShipPrefsHydrated(false)
+    setRenderPrefsHydrated(false)
     setSelectedPresetId(null)
     setBurnSubtitles(false)
   }, [mediaId])
 
   useEffect(() => {
-    if (shipPrefsHydrated || !configQuery.data) return
+    if (renderPrefsHydrated || !configQuery.data) return
     setBurnSubtitles(!!configQuery.data.burnSubtitles)
     if (configQuery.data.outputPresetId) {
       setSelectedPresetId(configQuery.data.outputPresetId)
     }
-    setShipPrefsHydrated(true)
-  }, [configQuery.data, shipPrefsHydrated])
+    setRenderPrefsHydrated(true)
+  }, [configQuery.data, renderPrefsHydrated])
 
   useEffect(() => {
-    if (!shipPrefsHydrated) return
+    if (!renderPrefsHydrated) return
     if (selectedPresetId || !presetsQuery.data?.length) return
     if (configQuery.data?.outputPresetId) return
     const fallback = pickDefaultPreset(
@@ -349,7 +343,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     )
     if (fallback) setSelectedPresetId(fallback.id)
   }, [
-    shipPrefsHydrated,
+    renderPrefsHydrated,
     selectedPresetId,
     presetsQuery.data,
     media.data?.width,
@@ -370,7 +364,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     void refetch()
   }, [refetch])
 
-  useTimelineEvents(projectId, mediaId, onTimelineRealtime)
+  useTimelineEvents(projectId || "", mediaId, onTimelineRealtime)
 
   // Finish wait only when silence+text are idle AND we saw a timeline.updated.
   useEffect(() => {
@@ -415,7 +409,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     (r) =>
       r.status === "queued" || r.status === "running" || r.status === "pending"
   )
-  const shipped = (rendersQuery.data ?? []).some((r) => r.status === "completed")
+  const hasCompletedRender = (rendersQuery.data ?? []).some((r) => r.status === "completed")
 
   useEffect(() => {
     const status = latestRender?.status ?? null
@@ -430,21 +424,32 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     ) {
       // Only toast when we observe a transition into completed (or first load with done).
       if (prev != null) {
-        setActionOk("Ship done — download your file in Render queue")
+        setActionOk("Render done — download your file in Render queue")
       }
     }
   }, [latestRender?.id, latestRender?.status])
 
-  // Lock edits while rebuild / silence regen / ship render is in flight.
-  const shipping = createRender.isPending || shippingClips || !!renderInFlight
+  const mediaStatus = media.data?.status ?? ""
+  const pipelineNotReady =
+    mediaStatus !== "" &&
+    mediaStatus !== "ready" &&
+    mediaStatus !== "rendering"
+  // Lock edits while pipeline incomplete, rebuild / silence regen, or render in flight.
+  const rendering =
+    mediaStatus === "rendering" ||
+    createRender.isPending ||
+    renderingClips ||
+    !!renderInFlight
   const editingLocked =
+    pipelineNotReady ||
     previewMut.isPending ||
     updateConfig.isPending ||
     awaitingRebuild ||
-    shipping
+    rendering
   editingLockedRef.current = editingLocked
   const busy = editingLocked
-  const shipProgress =
+  const canRender = mediaStatus === "ready" || mediaStatus === "rendering"
+  const renderProgress =
     latestRender && renderInFlight
       ? Math.max(
           0,
@@ -458,17 +463,23 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           )
         )
       : null
-  const lockReason = awaitingRebuild
-    ? "Rebuilding timeline — edits locked…"
-    : previewMut.isPending
-      ? "Building preview — edits locked…"
-      : updateConfig.isPending
-        ? "Saving settings — edits locked…"
-        : shipping
-          ? shipProgress != null
-            ? `Shipping — ${latestRender?.status ?? "render"} ${shipProgress}%…`
-            : "Shipping — edits locked…"
-          : null
+  const lockReason = pipelineNotReady
+    ? mediaStatus === "uploading" || mediaStatus === "fetching"
+      ? `Media ${mediaStatus} — wait until ready…`
+      : mediaStatus === "failed"
+        ? "Media failed — edits locked"
+        : "Processing — wait until all steps finish…"
+    : awaitingRebuild
+      ? "Rebuilding timeline — edits locked…"
+      : previewMut.isPending
+        ? "Building preview — edits locked…"
+        : updateConfig.isPending
+          ? "Saving settings — edits locked…"
+          : rendering
+            ? renderProgress != null
+              ? `Rendering — ${latestRender?.status ?? "render"} ${renderProgress}%…`
+              : "Rendering — edits locked…"
+            : null
 
   useEffect(() => {
     if (!editingLocked || !playing || !sourceVideo) return
@@ -528,7 +539,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     setActionError(null)
     setActionOk(null)
     try {
-      const data = await previewMut.mutateAsync(mediaId ?? undefined)
+      const data = await previewMut.mutateAsync()
       setPreview(data)
       setViewMode("preview")
     } catch (err) {
@@ -584,7 +595,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     }
   }
 
-  async function onShip() {
+  async function onRender() {
     if (!selectedPreset) {
       setActionError("Choisis un format de sortie")
       return
@@ -595,7 +606,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     }
     setActionError(null)
     setActionOk(null)
-    setShippingClips(true)
+    setRenderingClips(true)
     try {
       const render = await createRender.mutateAsync({
         presetId: selectedPreset.id,
@@ -603,11 +614,11 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         burnSubtitles,
         force: true,
       })
-      const toShip = selectedClips
+      const toRender = selectedClips
       // Queue clip jobs one-by-one; worker-render is serial (no parallel encodes).
-      if (toShip.length > 0) {
+      if (toRender.length > 0) {
         let failed = 0
-        for (const c of toShip) {
+        for (const c of toRender) {
           try {
             await createClipRender(c.id, {
               ...(verticalPresetId ? { presetId: verticalPresetId } : {}),
@@ -620,36 +631,35 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         }
         if (failed > 0) {
           setActionError(
-            `Master queued; ${failed}/${toShip.length} clip renders failed`
+            `Master queued; ${failed}/${toRender.length} clip renders failed`
           )
         }
       }
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.renders.byProject(projectId),
+        queryKey: queryKeys.renders.byMedia(mediaId),
       })
       setViewMode("saved")
       setPreview(null)
       const clipNote =
-        toShip.length > 0
-          ? ` + ${toShip.length} clip${toShip.length > 1 ? "s" : ""}`
+        toRender.length > 0
+          ? ` + ${toRender.length} clip${toRender.length > 1 ? "s" : ""}`
           : ""
       setActionOk(
-        `Shipping ${selectedPreset.name}${clipNote} — ${render.status}…`
+        `Rendering ${selectedPreset.name}${clipNote} — ${render.status}…`
       )
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Ship failed")
+      setActionError(err instanceof Error ? err.message : "Render failed")
     } finally {
-      setShippingClips(false)
+      setRenderingClips(false)
     }
   }
 
-  async function onDownloadRender(renderId: string, part?: number) {
+  async function onDownloadRender(renderId: string) {
     setActionError(null)
-    const dlKey = part ? `${renderId}:${part}` : renderId
-    setDownloadingId(dlKey)
+    setDownloadingId(renderId)
     try {
-      await downloadRender(renderId, part)
-      setActionOk(part ? `Part ${part} download started` : "Download started")
+      await downloadRender(renderId)
+      setActionOk("Download started")
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Download failed")
     } finally {
@@ -659,7 +669,6 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
   const masterSplit = parseMasterSplit(configQuery.data?.masterSplit)
   async function onMasterSplitChange(next: MasterSplitState) {
-    if (!mediaId) return
     setActionError(null)
     try {
       await updateConfig.mutateAsync({
@@ -712,10 +721,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             </span>
           </div>
           <PipelineSteps
-            steps={media.data?.steps}
+            steps={media.data?.steps ?? mediaSteps.data?.steps}
             timelineReady={Boolean(timeline && segments.length > 0)}
-            shipping={shipping}
-            shipped={shipped}
           />
         </div>
 
@@ -778,7 +785,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             >
               {previewMut.isPending ? "Building…" : "Rebuild"}
             </button>
-            {shipped && latestRender ? (
+            {hasCompletedRender && latestRender ? (
               <button
                 type="button"
                 className="cf-btn cf-btn-primary"
@@ -793,16 +800,22 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             <button
               type="button"
               className="cf-btn cf-btn-primary"
-              disabled={busy || segments.length === 0 || !selectedPreset}
-              onClick={() => void onShip()}
+              disabled={
+                !canRender ||
+                createRender.isPending ||
+                renderingClips ||
+                segments.length === 0 ||
+                !selectedPreset
+              }
+              onClick={() => void onRender()}
             >
-              {shipping
-                ? "Shipping…"
-                : shipped
-                  ? "Ship again"
+              {rendering
+                ? "Rendering…"
+                : hasCompletedRender
+                  ? "Render again"
                   : selectedClips.length > 0
-                    ? `Ship · master + ${selectedClips.length}`
-                    : "Ship · master"}
+                    ? `Render · master + ${selectedClips.length}`
+                    : "Render · master"}
             </button>
           </div>
         </div>
@@ -813,20 +826,20 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           {lockReason}
         </div>
       ) : null}
-      {shipped && !lockReason ? (
+      {hasCompletedRender && !lockReason ? (
         <div className="cf-panel shrink-0 border-[#b8ff3c55] px-3 py-2 text-[12px] text-[#b8ff3c]">
-          Ship complete — downloads in Render queue
+          Render complete — downloads in Render queue
         </div>
       ) : null}
       {latestRender?.status === "failed" && !lockReason ? (
         <div className="cf-panel shrink-0 border-[#ff4d9a55] px-3 py-2 text-[12px] text-[#ff4d9a]">
-          Ship failed
+          Render failed
           {latestRender.errorMessage
             ? ` — ${latestRender.errorMessage}`
             : ""}
         </div>
       ) : null}
-      {actionOk && !lockReason && !shipped ? (
+      {actionOk && !lockReason && !hasCompletedRender ? (
         <div className="cf-panel shrink-0 border-[#b8ff3c55] px-3 py-2 text-[12px] text-[#b8ff3c]">
           {actionOk}
         </div>
@@ -997,7 +1010,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
           <div className="cf-panel max-h-56 overflow-hidden">
             <div className="border-b border-[#232733] px-3 py-2">
-              <span className="cf-label">Clips · coche pour Ship</span>
+              <span className="cf-label">Clips · coche pour Render</span>
             </div>
             <ul className="cf-scroll max-h-24 overflow-y-auto px-2 py-1 text-[11px]">
               {allClips.length === 0 ? (
@@ -1026,7 +1039,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                           clip.selected ? "text-[#b8ff3c]" : "text-[#8b93a7]"
                         }
                       >
-                        {clip.selected ? "✓ SHIP" : "skip"}
+                        {clip.selected ? "✓ RENDER" : "skip"}
                       </span>
                     </button>
                   </li>
@@ -1039,7 +1052,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             <ul className="cf-scroll max-h-24 overflow-y-auto px-2 py-1 text-[11px]">
               {recentRenders.length === 0 ? (
                 <li className="px-1 py-2 text-[#8b93a7]">
-                  Ship = master
+                  Render = master
                   {selectedClips.length > 0
                     ? ` + ${selectedClips.length} clip${selectedClips.length > 1 ? "s" : ""}`
                     : " (aucun clip coché)"}
@@ -1071,36 +1084,19 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                             : job.status.toUpperCase()}
                         </span>
                         {job.status === "completed" ? (
-                          <span className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              className="cf-btn px-2 py-0.5 text-[10px]"
-                              disabled={downloadingId === job.id}
-                              onClick={() => void onDownloadRender(job.id)}
-                            >
-                              {downloadingId === job.id ? "…" : "↓ DL"}
-                            </button>
-                            {(job.outputParts?.length ?? 0) > 0
-                              ? job.outputParts!.map((_, i) => {
-                                  const part = i + 1
-                                  const key = `${job.id}:${part}`
-                                  return (
-                                    <button
-                                      key={key}
-                                      type="button"
-                                      className="cf-btn px-1.5 py-0.5 text-[10px]"
-                                      disabled={downloadingId === key}
-                                      onClick={() =>
-                                        void onDownloadRender(job.id, part)
-                                      }
-                                      title={`Part ${part}`}
-                                    >
-                                      {downloadingId === key ? "…" : `P${part}`}
-                                    </button>
-                                  )
-                                })
-                              : null}
-                          </span>
+                          <button
+                            type="button"
+                            className="cf-btn px-2 py-0.5 text-[10px]"
+                            disabled={downloadingId === job.id}
+                            onClick={() => void onDownloadRender(job.id)}
+                            title={
+                              (job.outputParts?.length ?? 0) > 0
+                                ? "Download zip (master + parts)"
+                                : "Download mp4"
+                            }
+                          >
+                            {downloadingId === job.id ? "…" : "↓ DL"}
+                          </button>
                         ) : null}
                       </span>
                     </div>
@@ -1211,7 +1207,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
               <code className="text-[#5ce1ff]">
                 {formatMasterSplit(masterSplit) || "off"}
               </code>
-              . Master entier + parts P1… après Ship.
+              . Master entier + parts P1… après Render.
             </p>
           </div>
         </div>
